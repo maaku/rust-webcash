@@ -4,11 +4,29 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-use actix_web::{get, App, HttpResponse, HttpServer, Responder};
+use actix_web::{get, http::header::ContentType, App, HttpResponse, HttpServer, Responder};
 
 #[get("/")]
 async fn index() -> impl Responder {
     HttpResponse::Ok().body("Hello, world!")
+}
+
+#[get("/terms")]
+async fn terms_html() -> impl Responder {
+    // FIXME: This won't build on windows.
+    // We should use OS-dependent path separators.
+    let terms = include_str!("../terms/terms.html");
+    HttpResponse::Ok()
+        .content_type(ContentType::html())
+        .body(terms)
+}
+
+#[get("/terms/text")]
+async fn terms_text() -> impl Responder {
+    let terms = include_str!("../terms/terms.text");
+    HttpResponse::Ok()
+        .content_type(ContentType::plaintext())
+        .body(terms)
 }
 
 #[get("/api/v1/replace")]
@@ -38,6 +56,8 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(|| {
         App::new()
             .service(index)
+            .service(terms_html)
+            .service(terms_text)
             .service(replace)
             .service(target)
             .service(mining_report)
