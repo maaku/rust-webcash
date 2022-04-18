@@ -9,10 +9,28 @@ name = "webserver"
 version = "0.1.0"
 edition = "2021"
 license = "MPL-2.0"
+exclude = [".github", "Dockerfile", ".dockerignore", "doc", "terms"]
+
+
+[[bin]]
+name = "webcs"
+path = "src/daemon/main.rs"
+
+[lib]
+name = "libwebcs"
+path = "src/core/lib.rs"
+proc-macro = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
 actix-web = "4"
+serde = { version = "1.0", features = ["derive"] }
+syn = { version = "1.0.57", features = ["full", "fold"] }
+quote = "1.0.8"
+
+[features]
+default = ["fdb"]
+fdb = []
 
 # End of File
