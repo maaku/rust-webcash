@@ -5,6 +5,8 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 use actix_web::{get, http::header::ContentType, post, App, HttpResponse, HttpServer, Responder};
+use core::*;
+
 
 #[get("/")]
 async fn index() -> impl Responder {
@@ -15,7 +17,7 @@ async fn index() -> impl Responder {
 async fn terms_html() -> impl Responder {
     // FIXME: This won't build on windows.
     // We should use OS-dependent path separators.
-    let terms = include_str!("../terms/terms.html");
+    let terms = include_str!("../../terms/terms.html");
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(terms)
@@ -23,7 +25,7 @@ async fn terms_html() -> impl Responder {
 
 #[get("/terms/text")]
 async fn terms_text() -> impl Responder {
-    let terms = include_str!("../terms/terms.text");
+    let terms = include_str!("../../terms/terms.text");
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())
         .body(terms)
