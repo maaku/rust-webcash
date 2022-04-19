@@ -7,11 +7,6 @@
 #[cfg(feature = "core")]
 mod models;
 #[cfg(feature = "core")]
-mod services;
-#[cfg(feature = "core")]
 mod providers;
-
-
-
-
-
+#[cfg(feature = "core")]
+mod services;

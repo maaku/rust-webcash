@@ -4,6 +4,4 @@
  * @license MPL-2.0
  */
 
-pub mod replace {
-    
-}
+pub mod replace {}

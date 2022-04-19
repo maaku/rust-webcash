@@ -6,7 +6,4 @@ pub mod response;
  * @license MPL-2.0
  */
 
-mod models {
-
-
-}
+mod models {}

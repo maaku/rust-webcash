@@ -3,7 +3,6 @@
  * @year 2022
  * @license MPL-2.0
  */
-
 use serde::Serialize;
 
 pub mod error {
@@ -11,8 +10,7 @@ pub mod error {
     use super::*;
 
     #[derive(Serialize)]
-        pub struct Target {
-            pub desc: String,
-        }
-
+    pub struct Target {
+        pub desc: String,
+    }
 }
