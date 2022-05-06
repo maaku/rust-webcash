@@ -14,7 +14,7 @@ const MAX_REPLACEMENT_OUTPUT_TOKENS: usize = 100;
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Hello, world!")
+    HttpResponse::Ok().body("webcashd\n")
 }
 
 #[get("/terms")]
@@ -127,18 +127,72 @@ async fn replace(replace_request: web::Json<ReplaceRequest>) -> Result<impl Resp
     Ok(json_replace_response(JSON_STATUS_SUCCESS, ""))
 }
 
+const FAKE_DIFFICULTY_TARGET_BITS: u8 = 20;
+const FAKE_RATIO: f64 = 1.00003;
+const FAKE_MINING_AMOUNT: &str = "100000.0";
+const FAKE_MINING_SUBSIDY_AMOUNT: &str = "5000.0";
+const FAKE_EPOCH: u64 = 1;
+
+#[derive(Serialize)]
+struct TargetResponse {
+    difficulty_target_bits: u8,
+    ratio: f64,
+    mining_amount: String,
+    mining_subsidy_amount: String,
+    epoch: u64,
+}
+
 #[get("/api/v1/target")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn target() -> impl Responder {
-    HttpResponse::Ok().body("target")
+    // TODO: Fill with real data.
+    web::Json(TargetResponse {
+        difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+        ratio: FAKE_RATIO,
+        mining_amount: String::from(FAKE_MINING_AMOUNT),
+        mining_subsidy_amount: String::from(FAKE_MINING_SUBSIDY_AMOUNT),
+        epoch: FAKE_EPOCH,
+    })
+}
+
+#[derive(Deserialize)]
+struct MiningReportRequest {
+    work: u128, // TODO: Use u256 here.
+    preimage: String,
+    legalese: LegaleseRequest,
+}
+
+#[derive(Serialize)]
+struct MiningReportResponse {
+    status: String,
+    error: String,
+    difficulty_target_bits: u8,
 }
 
 #[post("/api/v1/mining_report")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
-async fn mining_report() -> impl Responder {
-    HttpResponse::Ok().body("mining_report")
+async fn mining_report(
+    mining_report_request: web::Json<MiningReportRequest>,
+) -> Result<impl Responder> {
+    // TODO: Fill with real data.
+    let difficulty_target_bits = FAKE_DIFFICULTY_TARGET_BITS;
+
+    if !mining_report_request.legalese.terms {
+        return Ok(web::Json(MiningReportResponse {
+            status: String::from(JSON_STATUS_ERROR),
+            error: String::from("Terms of service not accepted."),
+            difficulty_target_bits,
+        }));
+    }
+
+    // TODO: Fill with real data.
+    Ok(web::Json(MiningReportResponse {
+        status: String::from(JSON_STATUS_SUCCESS),
+        error: String::from(""),
+        difficulty_target_bits,
+    }))
 }
 
 #[derive(Serialize)]

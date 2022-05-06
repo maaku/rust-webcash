@@ -12,7 +12,7 @@ const WEBCASH_TOKEN_KIND_IDENTIFIER_SECRET: &str = "secret";
 
 const HEX_STRING_LENGTH: usize = 64;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 pub enum WebcashTokenKind {
     Public,
     Secret,
@@ -283,14 +283,10 @@ mod tests {
     #[test]
     fn test_parse_webcash_tokens() {
         let valid_tokens_1 = vec![
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"
-                .to_string(),
-            "e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"
-                .to_string(),
-            "e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"
-                .to_string(),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
+            String::from("e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert!(parse_webcash_tokens(&valid_tokens_1, true, 100).is_ok());
         assert!(parse_webcash_tokens(&valid_tokens_1, false, 100).is_err());
@@ -300,14 +296,10 @@ mod tests {
         assert!(parse_webcash_tokens(&valid_tokens_1, false, 3).is_err());
 
         let valid_tokens_2 = vec![
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"
-                .to_string(),
-            "e1.00000000:secret:12345678901234567890123456789012345678901234567890123456789abcd3"
-                .to_string(),
-            "e1.0000:secret:12345678901234567890123456789012345678901234567890123456789abcd4"
-                .to_string(),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
+            String::from("e1.00000000:secret:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1.0000:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert!(parse_webcash_tokens(&valid_tokens_2, true, 4).is_ok());
         assert!(parse_webcash_tokens(&valid_tokens_2, false, 4).is_ok());
@@ -315,10 +307,8 @@ mod tests {
         assert!(parse_webcash_tokens(&valid_tokens_2, false, 3).is_err());
 
         let total_amount_too_large_tokens = vec![
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e210000000000:secret:12345678901234567890123456789012345678901234567890123456789abcd2"
-                .to_string(),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e210000000000:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
         ];
         assert!(parse_webcash_tokens(&total_amount_too_large_tokens, true, 100).is_err());
 
@@ -326,49 +316,37 @@ mod tests {
         assert!(parse_webcash_tokens(&zero_tokens, true, 100).is_err());
 
         let invalid_tokens = vec![
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1".to_string(),
-            "e1:public:12345678901234567890123456789012345678901234567890123456789abcd3".to_string(),
-            "e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4".to_string(),
-            "e210000000000.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2".to_string(),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
+            String::from("e210000000000.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
          ];
         assert!(parse_webcash_tokens(&invalid_tokens, true, 100).is_err());
         assert!(parse_webcash_tokens(&invalid_tokens, false, 100).is_err());
 
         let duplicate_hex_1 = vec![
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"
-                .to_string(),
-            "e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"
-                .to_string(),
-            "e1:secret:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
+            String::from("e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
         ];
         assert!(parse_webcash_tokens(&duplicate_hex_1, true, 100).is_err());
         assert!(parse_webcash_tokens(&duplicate_hex_1, false, 100).is_err());
 
         let duplicate_hex_2 = vec![
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"
-                .to_string(),
-            "e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"
-                .to_string(),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert!(parse_webcash_tokens(&duplicate_hex_2, true, 100).is_err());
         assert!(parse_webcash_tokens(&duplicate_hex_2, false, 100).is_err());
 
         let duplicate_hex_3 = vec![
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"
-                .to_string(),
-            "e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"
-                .to_string(),
-            "e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"
-                .to_string(),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e0.00000001:public:12345678901234567890123456789012345678901234567890123456789abcd1"),
+            String::from("e1:public:12345678901234567890123456789012345678901234567890123456789abcd3"),
+            String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert!(parse_webcash_tokens(&duplicate_hex_3, true, 100).is_err());
         assert!(parse_webcash_tokens(&duplicate_hex_3, false, 100).is_err());
@@ -467,18 +445,17 @@ mod tests {
             "e210000000000.00000000:public:12345678901234567890123456789012345678901234567890123456789abcde",
             "e210000000000.00000000:secret:12345678901234567890123456789012345678901234567890123456789abcde"
         ];
-        for token in tokens {
-            assert!(is_webcash_token(&webcash_token_to_string(
-                &parse_webcash_token(token).unwrap()
-            )));
-            assert!(is_webcash_token(&format!(
-                "{}",
-                &parse_webcash_token(token).unwrap()
-            )));
-            assert_eq!(
-                webcash_token_to_string(&parse_webcash_token(token).unwrap()),
-                format!("{}", &parse_webcash_token(token).unwrap())
-            );
+        for token_string in tokens {
+            let token = parse_webcash_token(token_string).unwrap();
+            assert!(is_webcash_token(&webcash_token_to_string(&token)));
+            assert!(is_webcash_token(&format!("{}", &token)));
+            assert_eq!(webcash_token_to_string(&token), format!("{}", &token));
+            if token.token_kind == WebcashTokenKind::Secret {
+                let public_token = token.to_public();
+                assert_eq!(token.amount, public_token.amount);
+                assert_ne!(token.token_kind, public_token.token_kind);
+                assert_ne!(token.hex_string, public_token.hex_string);
+            }
         }
     }
 
