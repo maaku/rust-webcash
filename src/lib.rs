@@ -100,7 +100,7 @@ impl std::str::FromStr for WebcashToken {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        parse_webcash_token(s).ok_or(format!("'{}' is not a valid value for WebcashToken", s))
+        parse_webcash_token(s).ok_or(format!("'{s}' is not a valid value for WebcashToken"))
     }
 }
 
@@ -258,7 +258,7 @@ fn secret_to_public(secret_value: &str) -> String {
     assert_eq!(secret_value.len(), HEX_STRING_LENGTH);
     assert!(is_webcash_hex_string(secret_value));
     let hash = Sha256::digest(secret_value);
-    let hex_hash = format!("{:x}", hash);
+    let hex_hash = format!("{hash:x}");
     assert_eq!(hex_hash.len(), HEX_STRING_LENGTH);
     assert!(is_webcash_hex_string(&hex_hash));
     hex_hash

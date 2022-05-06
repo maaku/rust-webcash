@@ -264,11 +264,14 @@ async fn health_check(health_check_request: web::Json<Vec<String>>) -> Result<im
     Ok(json_health_check_response(JSON_STATUS_SUCCESS, "", results))
 }
 
+const SERVER_HOSTNAME: &str = "127.0.0.1";
+const SERVER_PORT: u16 = 8000;
+
 #[actix_web::main]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn main() -> std::io::Result<()> {
-    println!("Starting server instance at http://127.0.0.1:8000/");
+    println!("Starting server instance at http://{SERVER_HOSTNAME}:{SERVER_PORT}/");
     println!("Quit the server with CONTROL-C.");
     HttpServer::new(|| {
         App::new()
@@ -280,7 +283,7 @@ async fn main() -> std::io::Result<()> {
             .service(mining_report)
             .service(health_check)
     })
-    .bind(("127.0.0.1", 8000))?
+    .bind((SERVER_HOSTNAME, SERVER_PORT))?
     .run()
     .await
 }
