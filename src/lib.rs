@@ -1,6 +1,7 @@
 use std::fmt;
 
 use rust_decimal::prelude::*;
+use sha2::{Digest, Sha256};
 
 const OPTIONAL_AMOUNT_PREFIX: &str = "e";
 const MAX_WEBCASH: i64 = 210_000_000_000;
@@ -11,16 +12,29 @@ const WEBCASH_TOKEN_KIND_IDENTIFIER_SECRET: &str = "secret";
 
 const HEX_STRING_LENGTH: usize = 64;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum WebcashTokenKind {
     Public,
     Secret,
 }
 
+#[derive(Clone)]
 pub struct WebcashToken {
     pub amount: Decimal,
     pub token_kind: WebcashTokenKind,
     pub hex_string: String,
+}
+
+impl WebcashToken {
+    #[must_use]
+    pub fn to_public(&self) -> WebcashToken {
+        assert!(self.token_kind == WebcashTokenKind::Secret);
+        WebcashToken {
+            amount: self.amount,
+            token_kind: WebcashTokenKind::Public,
+            hex_string: secret_to_public(&self.hex_string),
+        }
+    }
 }
 
 pub fn parse_webcash_tokens(
@@ -240,9 +254,31 @@ fn webcash_token_to_string(token: &WebcashToken) -> String {
     )
 }
 
+fn secret_to_public(secret_value: &str) -> String {
+    assert_eq!(secret_value.len(), HEX_STRING_LENGTH);
+    assert!(is_webcash_hex_string(secret_value));
+    let hash = Sha256::digest(secret_value);
+    let hex_hash = format!("{:x}", hash);
+    assert_eq!(hex_hash.len(), HEX_STRING_LENGTH);
+    assert!(is_webcash_hex_string(&hex_hash));
+    hex_hash
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_secret_to_public() {
+        assert_eq!(
+            secret_to_public("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"),
+            "d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9"
+        );
+        assert_eq!(
+            secret_to_public("b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"),
+            "049da052634feb56ce6ec0bc648c672011edff1cb272b53113bbc90a8f00249c"
+        );
+    }
 
     #[test]
     fn test_parse_webcash_tokens() {

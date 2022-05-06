@@ -144,6 +144,7 @@ async fn mining_report() -> impl Responder {
 #[derive(Serialize)]
 struct HealthCheckSpentResponse {
     spent: Option<bool>,
+    amount: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -190,9 +191,18 @@ async fn health_check(health_check_request: web::Json<Vec<String>>) -> Result<im
     // TODO: Fill response with correct data.
     for webcash_token in &webcash_tokens {
         let spent = Some(false); // TODO: Check data store status.
+        let public_webcash_token = if webcash_token.token_kind == webcash::WebcashTokenKind::Public
+        {
+            webcash_token.clone()
+        } else {
+            webcash_token.to_public()
+        };
         results.insert(
-            webcash_token.to_string(), // TODO: Public or private webcash expected here?
-            HealthCheckSpentResponse { spent },
+            public_webcash_token.to_string(),
+            HealthCheckSpentResponse {
+                spent,
+                amount: Some(public_webcash_token.amount.to_string()),
+            },
         );
     }
     assert!(results.len() == health_check_request.len());
