@@ -3,6 +3,9 @@ use std::fmt;
 use std::fs::File;
 use std::io::{BufReader, BufWriter};
 
+use thousands::Separable;
+#[macro_use]
+extern crate log;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -331,12 +334,26 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_total_unspent(&self) -> Decimal {
-        self.public_hash_to_amount_state
+        let now = std::time::Instant::now();
+        let total_unspent = self.public_hash_to_amount_state
             .values()
             .filter(|amount_state| !amount_state.spent)
             .map(|amount_state| amount_state.amount)
             .sum::<Decimal>()
-            .normalize()
+            .normalize();
+        trace!("Calculating total unspent webcash took {} ms.", now.elapsed().as_millis());
+        total_unspent
+    }
+
+    #[must_use]
+    pub fn get_number_of_unspent_tokens(&self) -> usize {
+        let now = std::time::Instant::now();
+        let number_of_unspent_tokens = self.public_hash_to_amount_state
+            .values()
+            .filter(|amount_state| !amount_state.spent)
+            .count();
+        trace!("Calculating number of unspent tookens took {} ms.", now.elapsed().as_millis());
+        number_of_unspent_tokens
     }
 
     #[must_use]
@@ -409,19 +426,15 @@ impl WebcashEconomy {
         true
     }
 
-    fn print(&self) {
-        let mut total_unspent: Decimal = Decimal::new(0, 0);
-        for (public_hash, amount_state) in &self.public_hash_to_amount_state {
-            let amount = amount_state.amount;
-            let spent = amount_state.spent;
-            if !spent {
-                println!("public_hash={public_hash} amount={amount}");
-                total_unspent += amount;
-            }
+    fn print_token_summary(&self) {
+        if !log_enabled!(log::Level::Debug) {
+            return;
         }
-        assert_eq!(total_unspent, self.get_total_unspent());
-        println!("Total unspent: {}", total_unspent.normalize());
-        println!();
+        debug!(
+            "[economy] Total unspent: {} (in {} tokens)",
+            self.get_total_unspent().separate_with_commas(),
+            self.get_number_of_unspent_tokens().separate_with_commas(),
+        );
     }
 
     fn create_token(&mut self, secret_webcash_token: &WebcashToken) {
@@ -434,6 +447,10 @@ impl WebcashEconomy {
             },
         );
         assert!(old_value.is_none());
+        debug!(
+            "[diff: +] Token of amount {} created",
+            secret_webcash_token.amount.separate_with_commas()
+        );
     }
 
     #[must_use]
@@ -449,10 +466,10 @@ impl WebcashEconomy {
             self.get_total_unspent() - total_unspent_before,
             secret_outputs.iter().map(|wc| wc.amount).sum::<Decimal>()
         );
-        self.print();
         if self.persist_to_disk {
             self.sync_to_disk();
         }
+        self.print_token_summary();
         true
     }
 
@@ -469,11 +486,13 @@ impl WebcashEconomy {
 
     fn sync_to_disk(&self) {
         assert!(self.persist_to_disk);
+        let now = std::time::Instant::now();
         let temporary_filename = format!("{}.{}", WEBCASH_ECONOMY_JSON_FILE, std::process::id());
         let file = File::create(&temporary_filename).unwrap();
         let writer = BufWriter::new(file);
         serde_json::to_writer(writer, self).unwrap();
         std::fs::rename(temporary_filename, WEBCASH_ECONOMY_JSON_FILE).unwrap();
+        trace!("Sync to disk took {} ms.", now.elapsed().as_millis());
     }
 
     fn mark_as_spent(&mut self, secret_webcash_token: &WebcashToken) {
@@ -483,8 +502,13 @@ impl WebcashEconomy {
             .public_hash_to_amount_state
             .get_mut(&secret_webcash_token.to_public().hex_string)
             .unwrap();
+        assert_eq!(amount_state.amount, secret_webcash_token.amount);
         assert!(!amount_state.spent);
         amount_state.spent = true;
+        debug!(
+            "[diff: -] Token of amount {} marked as spent",
+            amount_state.amount.separate_with_commas()
+        );
     }
 
     #[must_use]
@@ -520,7 +544,7 @@ impl WebcashEconomy {
         if self.persist_to_disk {
             self.sync_to_disk();
         }
-        self.print();
+        // self.print_token_summary() called in create_tokens above.
         true
     }
 }

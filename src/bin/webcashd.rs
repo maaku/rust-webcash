@@ -4,6 +4,9 @@ use std::sync::Mutex;
 use actix_web::{
     get, http::header::ContentType, post, web, App, HttpResponse, HttpServer, Responder, Result,
 };
+use thousands::Separable;
+#[macro_use]
+extern crate log;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -24,6 +27,8 @@ const FAKE_EPOCH: u64 = 1;
 const FAKE_MINING_AMOUNT: &str = "100000.0";
 const FAKE_MINING_SUBSIDY_AMOUNT: &str = "5000.0";
 const FAKE_RATIO: &str = "1.00003";
+
+const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
 #[get("/")]
 #[cfg(not(tarpaulin_include))]
@@ -437,20 +442,27 @@ struct WebcashApplicationState {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn main() -> std::io::Result<()> {
-    println!("Starting server instance at http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
+    if std::env::var_os("RUST_LOG").is_none() {
+        std::env::set_var("RUST_LOG", DEFAULT_RUST_LOG);
+    }
+    pretty_env_logger::init_timed();
+
+    info!("Starting server instance at http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
 
     let persist_to_disk = true;
     let webcash_economy = webcash::WebcashEconomy::new(persist_to_disk);
-    println!(
-        "The economy contains {} unspent webcash at startup.",
-        webcash_economy.get_total_unspent()
+    info!(
+        "The economy contains {} unspent webcash (in {} tokens) at startup.",
+        webcash_economy.get_total_unspent().separate_with_commas(),
+        webcash_economy
+            .get_number_of_unspent_tokens()
+            .separate_with_commas()
     );
+    info!("Set the environment variable RUST_LOG=debug to print debug information.");
+    info!("Quit the server with CONTROL-C.");
     let webcash_application_state = web::Data::new(WebcashApplicationState {
         webcash_economy: Mutex::new(webcash_economy),
     });
-
-    println!("Quit the server with CONTROL-C.");
-
     HttpServer::new(move || {
         App::new()
             .app_data(webcash_application_state.clone())
