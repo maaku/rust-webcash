@@ -303,9 +303,15 @@ pub struct AmountState {
     pub spent: bool,
 }
 
+// https://github.com/serde-rs/serde/issues/368
+fn serde_default_literals_workaround_default_true() -> bool {
+    true
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
     public_hash_to_amount_state: HashMap<String, AmountState>,
+    #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
 }
 
@@ -316,7 +322,7 @@ impl WebcashEconomy {
             public_hash_to_amount_state: HashMap::default(),
             persist_to_disk,
         };
-        if persist_to_disk {
+        if webcash_economy.persist_to_disk {
             webcash_economy.read_from_disk();
             webcash_economy.sync_to_disk();
         }

@@ -69,6 +69,7 @@ struct ReplaceRequest {
 #[derive(Serialize)]
 struct ReplaceResponse {
     status: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
 }
 
@@ -182,6 +183,7 @@ struct MiningReportRequest {
 #[derive(Serialize)]
 struct MiningReportResponse {
     status: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
     difficulty_target_bits: u8,
 }
@@ -217,7 +219,7 @@ async fn mining_report(
         Err(_) => {
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not decode preimage as base64."),
+                error: String::from("Could not base64 decode preimage."),
                 difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
             }))
         }
@@ -228,7 +230,7 @@ async fn mining_report(
         Err(_) => {
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not decode preimage bytes as UTF-8."),
+                error: String::from("Could not UTF-8 decode preimage bytes."),
                 difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
             }))
         }
@@ -239,7 +241,7 @@ async fn mining_report(
         Err(_) => {
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not deserialize preimage string."),
+                error: String::from("Could not JSON decode preimage string."),
                 difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
             }))
         }
@@ -261,6 +263,8 @@ async fn mining_report(
         }));
     }
 
+    // TODO: Check validity of PreimageRequest. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
+
     let webcash_tokens = match webcash::parse_webcash_tokens(
         &preimage.webcash,
         &webcash::WebcashTokenKind::Secret,
@@ -275,7 +279,8 @@ async fn mining_report(
             }))
         }
     };
-    // TODO: Check validity of PreimageRequest. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
+
+    // TODO: Check the validity of the subsidy. Correct amount? Part of webcash_tokens? Claim and store server operator's tokens.
     let _subsidy_tokens = match webcash::parse_webcash_tokens(
         &preimage.subsidy,
         &webcash::WebcashTokenKind::Secret,
@@ -316,6 +321,7 @@ struct HealthCheckSpentResponse {
 #[derive(Serialize)]
 struct HealthCheckResponse {
     status: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
     results: HashMap<String, HealthCheckSpentResponse>,
 }
