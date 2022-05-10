@@ -32,13 +32,33 @@ async fn index() -> impl Responder {
     HttpResponse::Ok().body("webcashd\n")
 }
 
+#[cfg(host_family = "windows")]
+macro_rules! PATH_SEPARATOR {
+    () => {
+        r"\"
+    };
+}
+
+#[cfg(not(host_family = "windows"))]
+macro_rules! PATH_SEPARATOR {
+    () => {
+        r"/"
+    };
+}
+
 #[get("/terms")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn terms_html() -> impl Responder {
-    // FIXME: This won't build on windows.
-    // We should use OS-dependent path separators.
-    let terms = include_str!("../../terms/terms.html");
+    let terms = include_str!(concat!(
+        "..",
+        PATH_SEPARATOR!(),
+        "..",
+        PATH_SEPARATOR!(),
+        "terms",
+        PATH_SEPARATOR!(),
+        "terms.html"
+    ));
     HttpResponse::Ok()
         .content_type(ContentType::html())
         .body(terms)
@@ -48,7 +68,15 @@ async fn terms_html() -> impl Responder {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn terms_text() -> impl Responder {
-    let terms = include_str!("../../terms/terms.text");
+    let terms = include_str!(concat!(
+        "..",
+        PATH_SEPARATOR!(),
+        "..",
+        PATH_SEPARATOR!(),
+        "terms",
+        PATH_SEPARATOR!(),
+        "terms.text"
+    ));
     HttpResponse::Ok()
         .content_type(ContentType::plaintext())
         .body(terms)
