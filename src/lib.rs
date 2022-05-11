@@ -14,6 +14,10 @@ const OPTIONAL_AMOUNT_PREFIX: &str = "e";
 const MAX_WEBCASH: i64 = 210_000_000_000;
 const WEBCASH_DECIMALS: u32 = 8;
 
+const MINING_REPORTS_PER_EPOCH: u32 = 525_000;
+const MINING_AMOUNT_IN_FIRST_EPOCH: i64 = 200_000;
+const MINING_SUBSIDY_FRACTION: &str = "0.05";
+
 const WEBCASH_TOKEN_KIND_IDENTIFIER_PUBLIC: &str = "public";
 const WEBCASH_TOKEN_KIND_IDENTIFIER_SECRET: &str = "secret";
 
@@ -335,24 +339,32 @@ impl WebcashEconomy {
     #[must_use]
     pub fn get_total_unspent(&self) -> Decimal {
         let now = std::time::Instant::now();
-        let total_unspent = self.public_hash_to_amount_state
+        let total_unspent = self
+            .public_hash_to_amount_state
             .values()
             .filter(|amount_state| !amount_state.spent)
             .map(|amount_state| amount_state.amount)
             .sum::<Decimal>()
             .normalize();
-        trace!("Calculating total unspent webcash took {} ms.", now.elapsed().as_millis());
+        trace!(
+            "Calculating total unspent webcash took {} ms.",
+            now.elapsed().as_millis()
+        );
         total_unspent
     }
 
     #[must_use]
     pub fn get_number_of_unspent_tokens(&self) -> usize {
         let now = std::time::Instant::now();
-        let number_of_unspent_tokens = self.public_hash_to_amount_state
+        let number_of_unspent_tokens = self
+            .public_hash_to_amount_state
             .values()
             .filter(|amount_state| !amount_state.spent)
             .count();
-        trace!("Calculating number of unspent tookens took {} ms.", now.elapsed().as_millis());
+        trace!(
+            "Calculating number of unspent tookens took {} ms.",
+            now.elapsed().as_millis()
+        );
         number_of_unspent_tokens
     }
 
@@ -549,6 +561,57 @@ impl WebcashEconomy {
     }
 }
 
+// TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
+fn mining_amount_per_mining_report_in_epoch(epoch: u32) -> Decimal {
+    if epoch >= 63 {
+        return Decimal::new(0, 0);
+    }
+    (Decimal::new(MINING_AMOUNT_IN_FIRST_EPOCH, 0) / Decimal::new(i64::pow(2, epoch), 0))
+        .round_dp(WEBCASH_DECIMALS)
+        .normalize()
+}
+
+// TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
+#[must_use]
+pub fn mining_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+    assert!(mining_report_number >= 1);
+    mining_amount_per_mining_report_in_epoch(epoch(mining_report_number))
+}
+
+// TODO: How to handle zero return value case? Is not a valid webcash amount.
+#[must_use]
+pub fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+    assert!(mining_report_number >= 1);
+    (mining_amount_for_mining_report(mining_report_number) * decimal(MINING_SUBSIDY_FRACTION))
+        .round_dp(WEBCASH_DECIMALS)
+        .normalize()
+}
+
+#[must_use]
+pub fn epoch(mining_report_number: u32) -> u32 {
+    assert!(mining_report_number >= 1);
+    (mining_report_number - 1) / MINING_REPORTS_PER_EPOCH
+}
+
+fn total_circulation(mining_report_number: u32) -> Decimal {
+    assert!(mining_report_number >= 1);
+    let mut total_circulation = Decimal::default();
+    let mut mining_reports_in_current_epoch = mining_report_number;
+    for past_epoch in 0..epoch(mining_report_number) {
+        total_circulation += mining_amount_per_mining_report_in_epoch(past_epoch)
+            * Decimal::new(i64::from(MINING_REPORTS_PER_EPOCH), 0);
+        mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
+    }
+    total_circulation += mining_amount_per_mining_report_in_epoch(epoch(mining_report_number))
+        * Decimal::new(i64::from(mining_reports_in_current_epoch), 0);
+    assert!(is_webcash_amount(total_circulation));
+    total_circulation
+}
+
+fn decimal(str: &str) -> Decimal {
+    Decimal::from_str_exact(str).unwrap()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,45 +757,23 @@ mod tests {
 
     #[test]
     fn test_is_webcash_amount() {
-        assert!(is_webcash_amount(
-            Decimal::from_str_exact("0.00000001").unwrap()
-        ));
-        assert!(is_webcash_amount(Decimal::from_str_exact("1").unwrap()));
-        assert!(is_webcash_amount(
-            Decimal::from_str_exact("1.00000001").unwrap()
-        ));
-        assert!(is_webcash_amount(
-            Decimal::from_str_exact("209999999999.99999999").unwrap()
-        ));
-        assert!(is_webcash_amount(
-            Decimal::from_str_exact("210000000000").unwrap()
-        ));
+        assert!(is_webcash_amount(decimal("0.00000001")));
+        assert!(is_webcash_amount(decimal("1")));
+        assert!(is_webcash_amount(decimal("1.00000001")));
+        assert!(is_webcash_amount(decimal("209999999999.99999999")));
+        assert!(is_webcash_amount(decimal("210000000000")));
 
-        assert!(!is_webcash_amount(Decimal::from_str_exact("0").unwrap()));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("0.000000001").unwrap()
-        ));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("1.000000001").unwrap()
-        ));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("209999999999.999999989").unwrap()
-        ));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("210000000000.00000001").unwrap()
-        ));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("210000000000.1").unwrap()
-        ));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("210000000001").unwrap()
-        ));
-        assert!(!is_webcash_amount(Decimal::from_str_exact("-0").unwrap()));
-        assert!(!is_webcash_amount(Decimal::from_str_exact("-1").unwrap()));
-        assert!(!is_webcash_amount(Decimal::from_str_exact("-1.1").unwrap()));
-        assert!(!is_webcash_amount(
-            Decimal::from_str_exact("-210000000000").unwrap()
-        ));
+        assert!(!is_webcash_amount(decimal("0")));
+        assert!(!is_webcash_amount(decimal("0.000000001")));
+        assert!(!is_webcash_amount(decimal("1.000000001")));
+        assert!(!is_webcash_amount(decimal("209999999999.999999989")));
+        assert!(!is_webcash_amount(decimal("210000000000.00000001")));
+        assert!(!is_webcash_amount(decimal("210000000000.1")));
+        assert!(!is_webcash_amount(decimal("210000000001")));
+        assert!(!is_webcash_amount(decimal("-0")));
+        assert!(!is_webcash_amount(decimal("-1")));
+        assert!(!is_webcash_amount(decimal("-1.1")));
+        assert!(!is_webcash_amount(decimal("-210000000000")));
     }
 
     #[test]
@@ -926,5 +967,292 @@ mod tests {
         assert!(!is_webcash_token(
            "e2100000000000.00000000:secret:12345678901234567890123456789012345678901234567890123456789abcde"
         ));
+    }
+
+    #[test]
+    fn test_epoch() {
+        assert_eq!(epoch(1), 0);
+        assert_eq!(epoch(525_000), 0);
+        assert_eq!(epoch(525_001), 1);
+        assert_eq!(epoch(1_069_492), 2);
+    }
+
+    #[test]
+    fn test_mining_amount_per_mining_report_in_epoch() {
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(0),
+            Decimal::new(MINING_AMOUNT_IN_FIRST_EPOCH, 0)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(44),
+            decimal("0.00000001")
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(45),
+            decimal("0.00000001")
+        );
+        assert_eq!(mining_amount_per_mining_report_in_epoch(46), decimal("0"));
+        assert_eq!(mining_amount_per_mining_report_in_epoch(63), decimal("0"));
+        assert_eq!(mining_amount_per_mining_report_in_epoch(64), decimal("0"));
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(10_000_000),
+            decimal("0")
+        );
+    }
+
+    #[test]
+    fn test_mining_amount_for_mining_report() {
+        assert_eq!(mining_amount_for_mining_report(1), decimal("200000"));
+        assert_eq!(mining_amount_for_mining_report(2), decimal("200000"));
+        assert_eq!(mining_amount_for_mining_report(525_000), decimal("200000"));
+        assert_eq!(
+            mining_amount_for_mining_report(525_000 + 1),
+            decimal("100000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(2 * 525_000),
+            decimal("100000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(2 * 525_000 + 1),
+            decimal("50000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(3 * 525_000),
+            decimal("50000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(3 * 525_000 + 1),
+            decimal("25000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(4 * 525_000),
+            decimal("25000")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(4 * 525_000 + 1),
+            decimal("12500")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(5 * 525_000),
+            decimal("12500")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(5 * 525_000 + 1),
+            decimal("6250")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(6 * 525_000),
+            decimal("6250")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(6 * 525_000 + 1),
+            decimal("3125")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(7 * 525_000),
+            decimal("3125")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(7 * 525_000 + 1),
+            decimal("1562.5")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(8 * 525_000),
+            decimal("1562.5")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(8 * 525_000 + 1),
+            decimal("781.25")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(9 * 525_000),
+            decimal("781.25")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(9 * 525_000 + 1),
+            decimal("390.625")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(10 * 525_000),
+            decimal("390.625")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(10 * 525_000 + 1),
+            decimal("195.3125")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(10 * 525_000),
+            decimal("390.625")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(20 * 525_000),
+            decimal("0.38146973")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(30 * 525_000),
+            decimal("0.00037253")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(40 * 525_000),
+            decimal("0.00000036")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(41 * 525_000),
+            decimal("0.00000018")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(42 * 525_000),
+            decimal("0.00000009")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(43 * 525_000),
+            decimal("0.00000005")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(44 * 525_000),
+            decimal("0.00000002")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(45 * 525_000),
+            decimal("0.00000001")
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(46 * 525_000),
+            decimal("0.00000001")
+        );
+        assert_eq!(mining_amount_for_mining_report(47 * 525_000), decimal("0"));
+        assert_eq!(mining_amount_for_mining_report(50 * 525_000), decimal("0"));
+        assert_eq!(mining_amount_for_mining_report(100 * 525_000), decimal("0"));
+        assert_eq!(
+            mining_amount_for_mining_report(1000 * 525_000),
+            decimal("0")
+        );
+        assert_eq!(mining_amount_for_mining_report(1_069_352), decimal("50000"));
+    }
+
+    #[test]
+    fn test_mining_subsidy_amount_for_mining_report() {
+        assert_eq!(mining_subsidy_amount_for_mining_report(1), decimal("10000"));
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(2 * 525_000),
+            decimal("5000.00")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(5 * 525_000),
+            decimal("625.00")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(8 * 525_000),
+            decimal("78.125")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(10 * 525_000),
+            decimal("19.53125")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(20 * 525_000),
+            decimal("0.01907349")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(30 * 525_000),
+            decimal("0.00001863")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(40 * 525_000),
+            decimal("0.00000002")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(41 * 525_000),
+            decimal("0.00000001")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(42 * 525_000),
+            decimal("0")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(100 * 525_000),
+            decimal("0")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1000 * 525_000),
+            decimal("0")
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1_069_352),
+            decimal("2500")
+        );
+    }
+
+    #[test]
+    fn test_total_circulation() {
+        assert_eq!(total_circulation(1), decimal("200000"));
+        assert_eq!(total_circulation(10), decimal("2000000"));
+        assert_eq!(total_circulation(100), decimal("20000000"));
+        assert_eq!(total_circulation(1000), decimal("200000000"));
+        assert_eq!(total_circulation(10000), decimal("2000000000"));
+        assert_eq!(total_circulation(100_000), decimal("20000000000"));
+        assert_eq!(total_circulation(1_000_000), decimal("152500000000"));
+        assert_eq!(
+            total_circulation(10_000_000),
+            decimal("209999608993.52675000")
+        );
+        assert_eq!(
+            total_circulation(100_000_000),
+            decimal("209999999999.99475000")
+        );
+        assert_eq!(
+            total_circulation(1_000_000_000),
+            decimal("209999999999.99475000")
+        );
+
+        assert_eq!(total_circulation(524_999), decimal("104999800000"));
+        assert_eq!(total_circulation(525_000), decimal("105000000000"));
+        assert_eq!(total_circulation(525_001), decimal("105000100000"));
+    }
+
+    #[test]
+    fn test_find_max_supply() {
+        let mut epoch = 0;
+        let first_zero_reward_epoch;
+        loop {
+            let reward_in_epoch = mining_amount_per_mining_report_in_epoch(epoch);
+            if reward_in_epoch == decimal("0") {
+                first_zero_reward_epoch = epoch;
+                break;
+            }
+            epoch += 1;
+        }
+        assert_eq!(first_zero_reward_epoch, 46);
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(first_zero_reward_epoch),
+            decimal("0")
+        );
+        assert_ne!(
+            total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH - 1),
+            total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH)
+        );
+        assert_eq!(
+            total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH),
+            total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH + 1)
+        );
+        assert_eq!(
+            total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH),
+            decimal("209999999999.99475000")
+        );
+    }
+
+    #[test]
+    fn test_total_mining_amount() {
+        let mut total_mining_amount = Decimal::default();
+        for epoch in 0..=100 {
+            let per_mining_report_mining_amount = mining_amount_per_mining_report_in_epoch(epoch);
+            total_mining_amount += per_mining_report_mining_amount
+                * Decimal::new(i64::from(MINING_REPORTS_PER_EPOCH), 0);
+        }
+        assert_eq!(total_mining_amount, decimal("209999999999.99475000"));
+        assert_eq!(total_mining_amount, total_circulation(4_294_967_295));
+        let missing_webcash = Decimal::new(MAX_WEBCASH, 0) - total_mining_amount;
+        assert_eq!(missing_webcash, decimal("0.00525000"));
     }
 }

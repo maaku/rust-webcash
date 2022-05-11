@@ -11,8 +11,8 @@ use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 
 const MAX_HEALTH_CHECK_TOKENS: usize = 100;
-const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 1;
-const MAX_MINING_OUTPUT_TOKENS: usize = 2;
+const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
+const MAX_MINING_OUTPUT_TOKENS: usize = 100;
 const MAX_REPLACEMENT_INPUT_TOKENS: usize = 100;
 const MAX_REPLACEMENT_OUTPUT_TOKENS: usize = 100;
 
@@ -22,11 +22,9 @@ const SERVER_BIND_PORT: u16 = 8000;
 const JSON_STATUS_ERROR: &str = "error";
 const JSON_STATUS_SUCCESS: &str = "success";
 
-const FAKE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const FAKE_EPOCH: u64 = 1;
-const FAKE_MINING_AMOUNT: &str = "100000.0";
-const FAKE_MINING_SUBSIDY_AMOUNT: &str = "5000.0";
-const FAKE_RATIO: &str = "1.00003";
+const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
+const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
+const DUMMY_VALUE_RATIO: &str = "1.0001";
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
@@ -189,7 +187,7 @@ struct TargetResponse {
     ratio: Decimal,
     mining_amount: String,
     mining_subsidy_amount: String,
-    epoch: u64,
+    epoch: u32,
 }
 
 #[get("/api/v1/target")]
@@ -198,11 +196,15 @@ struct TargetResponse {
 async fn target(_data: web::Data<WebcashApplicationState>) -> impl Responder {
     // TODO: Fill with real data.
     web::Json(TargetResponse {
-        difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
-        ratio: Decimal::from_str_exact(FAKE_RATIO).unwrap(),
-        mining_amount: String::from(FAKE_MINING_AMOUNT),
-        mining_subsidy_amount: String::from(FAKE_MINING_SUBSIDY_AMOUNT),
-        epoch: FAKE_EPOCH,
+        difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+        ratio: Decimal::from_str_exact(DUMMY_VALUE_RATIO).unwrap(),
+        mining_amount: webcash::mining_amount_for_mining_report(DUMMY_VALUE_MINING_REPORTS)
+            .to_string(),
+        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
+            DUMMY_VALUE_MINING_REPORTS,
+        )
+        .to_string(),
+        epoch: webcash::epoch(DUMMY_VALUE_MINING_REPORTS),
     })
 }
 
@@ -243,7 +245,7 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Terms of service not accepted."),
-            difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
         }));
     }
 
@@ -253,7 +255,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not base64 decode preimage."),
-                difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
             }))
         }
     };
@@ -264,7 +266,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not UTF-8 decode preimage bytes."),
-                difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
             }))
         }
     };
@@ -275,7 +277,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not JSON decode preimage string."),
-                difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
             }))
         }
     };
@@ -284,15 +286,15 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Terms of service not accepted in preimage JSON."),
-            difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
         }));
     }
 
-    if preimage.difficulty != FAKE_DIFFICULTY_TARGET_BITS {
+    if preimage.difficulty != DUMMY_VALUE_DIFFICULTY_TARGET_BITS {
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Invalid difficulty in preimage JSON."),
-            difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
         }));
     }
 
@@ -308,7 +310,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not parse webcash tokens."),
-                difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
             }))
         }
     };
@@ -324,7 +326,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not parse subsidy tokens."),
-                difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
             }))
         }
     };
@@ -335,13 +337,13 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Mining failed."),
-            difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
         }));
     }
     Ok(web::Json(MiningReportResponse {
         status: String::from(JSON_STATUS_SUCCESS),
         error: String::from(""),
-        difficulty_target_bits: FAKE_DIFFICULTY_TARGET_BITS,
+        difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
     }))
 }
 
