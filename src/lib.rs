@@ -322,7 +322,26 @@ pub struct WebcashEconomy {
     persist_to_disk: bool,
 }
 
+const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
+const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
+const DUMMY_VALUE_RATIO: &str = "1.0001";
+
 impl WebcashEconomy {
+    #[must_use]
+    pub fn get_mining_reports(&self) -> u32 {
+        DUMMY_VALUE_MINING_REPORTS
+    }
+
+    #[must_use]
+    pub fn get_difficulty_target_bits(&self) -> u8 {
+        DUMMY_VALUE_DIFFICULTY_TARGET_BITS
+    }
+
+    #[must_use]
+    pub fn get_ratio(&self) -> Decimal {
+        decimal(DUMMY_VALUE_RATIO)
+    }
+
     #[must_use]
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
@@ -593,7 +612,8 @@ pub fn epoch(mining_report_number: u32) -> u32 {
     (mining_report_number - 1) / MINING_REPORTS_PER_EPOCH
 }
 
-fn total_circulation(mining_report_number: u32) -> Decimal {
+#[must_use]
+pub fn total_circulation(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     let mut total_circulation = Decimal::default();
     let mut mining_reports_in_current_epoch = mining_report_number;

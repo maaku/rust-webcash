@@ -10,23 +10,13 @@ extern crate log;
 use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
 
-const MAX_HEALTH_CHECK_TOKENS: usize = 100;
-const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
-const MAX_MINING_OUTPUT_TOKENS: usize = 100;
-const MAX_REPLACEMENT_INPUT_TOKENS: usize = 100;
-const MAX_REPLACEMENT_OUTPUT_TOKENS: usize = 100;
+const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const SERVER_BIND_PORT: u16 = 8000;
 
 const JSON_STATUS_ERROR: &str = "error";
 const JSON_STATUS_SUCCESS: &str = "success";
-
-const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
-const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const DUMMY_VALUE_RATIO: &str = "1.0001";
-
-const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
 #[get("/")]
 #[cfg(not(tarpaulin_include))]
@@ -114,6 +104,9 @@ fn json_replace_response(status_message: &str, error_message: &str) -> impl acti
     })
 }
 
+const MAX_REPLACEMENT_INPUT_TOKENS: usize = 100;
+const MAX_REPLACEMENT_OUTPUT_TOKENS: usize = 100;
+
 #[post("/api/v1/replace")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
@@ -193,18 +186,64 @@ struct TargetResponse {
 #[get("/api/v1/target")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
-async fn target(_data: web::Data<WebcashApplicationState>) -> impl Responder {
+async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
     // TODO: Fill with real data.
+    let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(TargetResponse {
-        difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
-        ratio: Decimal::from_str_exact(DUMMY_VALUE_RATIO).unwrap(),
-        mining_amount: webcash::mining_amount_for_mining_report(DUMMY_VALUE_MINING_REPORTS)
-            .to_string(),
-        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
-            DUMMY_VALUE_MINING_REPORTS,
+        difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+        ratio: webcash_economy.get_ratio(),
+        mining_amount: webcash::mining_amount_for_mining_report(
+            webcash_economy.get_mining_reports(),
         )
         .to_string(),
-        epoch: webcash::epoch(DUMMY_VALUE_MINING_REPORTS),
+        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
+            webcash_economy.get_mining_reports(),
+        )
+        .to_string(),
+        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+    })
+}
+
+#[derive(Serialize)]
+struct StatsResponse {
+    circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
+    circulation: u64, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
+    difficulty_target_bits: u8,
+    ratio: f64,            // TODO/FIX: float here but string (decimal) in target API call.
+    mining_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
+    mining_subsidy_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
+    epoch: u32,
+    mining_reports: u32,
+}
+
+#[get("/stats")]
+#[cfg(not(tarpaulin_include))]
+#[allow(clippy::unused_async)]
+async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
+    // TODO: Fill with real data.
+    let webcash_economy = &mut data.webcash_economy.lock().unwrap();
+    web::Json(StatsResponse {
+        circulation_formatted: webcash::total_circulation(webcash_economy.get_mining_reports())
+            .trunc()
+            .to_u64()
+            .unwrap()
+            .separate_with_commas(), // NOTE: Not exact.
+        circulation: webcash::total_circulation(webcash_economy.get_mining_reports())
+            .trunc()
+            .to_u64()
+            .unwrap(), // NOTE: Not exact.
+        difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+        ratio: webcash_economy.get_ratio().to_f64().unwrap(),
+        mining_amount: webcash::mining_amount_for_mining_report(
+            webcash_economy.get_mining_reports(),
+        )
+        .to_string(),
+        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
+            webcash_economy.get_mining_reports(),
+        )
+        .to_string(),
+        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+        mining_reports: webcash_economy.get_mining_reports(),
     })
 }
 
@@ -233,6 +272,9 @@ struct PreimageRequest {
     legalese: LegaleseRequest,
 }
 
+const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
+const MAX_MINING_OUTPUT_TOKENS: usize = 100;
+
 #[post("/api/v1/mining_report")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
@@ -240,12 +282,13 @@ async fn mining_report(
     data: web::Data<WebcashApplicationState>,
     mining_report_request: web::Json<MiningReportRequest>,
 ) -> Result<impl Responder> {
+    let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     // TODO: Fill with real data.
     if !mining_report_request.legalese.terms {
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Terms of service not accepted."),
-            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }
 
@@ -255,7 +298,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not base64 decode preimage."),
-                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
             }))
         }
     };
@@ -266,7 +309,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not UTF-8 decode preimage bytes."),
-                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
             }))
         }
     };
@@ -277,7 +320,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not JSON decode preimage string."),
-                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
             }))
         }
     };
@@ -286,15 +329,15 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Terms of service not accepted in preimage JSON."),
-            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }
 
-    if preimage.difficulty != DUMMY_VALUE_DIFFICULTY_TARGET_BITS {
+    if preimage.difficulty != webcash_economy.get_difficulty_target_bits() {
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Invalid difficulty in preimage JSON."),
-            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }
 
@@ -310,7 +353,7 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not parse webcash tokens."),
-                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
             }))
         }
     };
@@ -326,24 +369,23 @@ async fn mining_report(
             return Ok(web::Json(MiningReportResponse {
                 status: String::from(JSON_STATUS_ERROR),
                 error: String::from("Could not parse subsidy tokens."),
-                difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
             }))
         }
     };
 
-    let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
     if !mining_successful {
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Mining failed."),
-            difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }
     Ok(web::Json(MiningReportResponse {
         status: String::from(JSON_STATUS_SUCCESS),
         error: String::from(""),
-        difficulty_target_bits: DUMMY_VALUE_DIFFICULTY_TARGET_BITS,
+        difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
     }))
 }
 
@@ -375,6 +417,8 @@ fn json_health_check_response(
         results,
     })
 }
+
+const MAX_HEALTH_CHECK_TOKENS: usize = 100;
 
 #[post("/api/v1/health_check")]
 #[cfg(not(tarpaulin_include))]
@@ -475,6 +519,7 @@ async fn main() -> std::io::Result<()> {
             .service(target)
             .service(mining_report)
             .service(health_check)
+            .service(stats)
     })
     .bind((SERVER_BIND_ADDRESS, SERVER_BIND_PORT))?
     .run()
