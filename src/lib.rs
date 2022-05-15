@@ -324,7 +324,7 @@ pub struct WebcashEconomy {
 
 const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
 const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const DUMMY_VALUE_RATIO: &str = "1.0001";
+const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
     #[must_use]
@@ -338,8 +338,8 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_ratio(&self) -> Decimal {
-        decimal(DUMMY_VALUE_RATIO)
+    pub fn get_ratio(&self) -> f32 {
+        DUMMY_VALUE_RATIO
     }
 
     #[must_use]

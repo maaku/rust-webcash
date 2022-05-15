@@ -177,7 +177,7 @@ async fn replace(
 #[derive(Serialize)]
 struct TargetResponse {
     difficulty_target_bits: u8,
-    ratio: Decimal,
+    ratio: f32,
     mining_amount: String,
     mining_subsidy_amount: String,
     epoch: u32,
