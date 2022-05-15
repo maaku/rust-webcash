@@ -9,8 +9,9 @@ const OPTIONAL_AMOUNT_PREFIX: &str = "e";
 const MAX_WEBCASH: i64 = 210_000_000_000;
 const WEBCASH_DECIMALS: u32 = 8;
 
-const MINING_REPORTS_PER_EPOCH: u32 = 525_000;
 const MINING_AMOUNT_IN_FIRST_EPOCH: i64 = 200_000;
+const MINING_REPORTS_PER_EPOCH: u32 = 525_000;
+const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 15 * 30;
 const MINING_SUBSIDY_FRACTION: &str = "0.05";
 
 const WEBCASH_TOKEN_KIND_IDENTIFIER_PUBLIC: &str = "public";
@@ -350,10 +351,18 @@ impl WebcashEconomy {
         webcash_economy
     }
 
-    // TODO: Check proof of work age (timestamp)
     #[must_use]
-    pub fn is_valid_proof_of_work(&self, work: primitive_types::U256, preimage: &str) -> bool {
+    pub fn is_valid_proof_of_work(
+        &self,
+        work: primitive_types::U256,
+        preimage: &str,
+        preimage_timestamp: i64,
+    ) -> bool {
         if work.leading_zeros() < self.get_difficulty_target_bits() {
+            return false;
+        }
+        let timestamp_diff = (chrono::Utc::now().timestamp() - preimage_timestamp).unsigned_abs();
+        if timestamp_diff > MINING_SOLUTION_MAX_AGE_IN_SECONDS {
             return false;
         }
         let preimage_hash = Sha256::digest(preimage);

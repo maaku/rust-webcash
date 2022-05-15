@@ -285,7 +285,6 @@ async fn mining_report(
     mining_report_request: web::Json<MiningReportRequest>,
 ) -> Result<impl Responder> {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
-    // TODO: Fill with real data.
     if !mining_report_request.legalese.terms {
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
@@ -304,14 +303,6 @@ async fn mining_report(
             }))
         }
     };
-
-    if !webcash_economy.is_valid_proof_of_work(work, &mining_report_request.preimage) {
-        return Ok(web::Json(MiningReportResponse {
-            status: String::from(JSON_STATUS_ERROR),
-            error: String::from("Invalid proof of work."),
-            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        }));
-    }
 
     let preimage_bytes = match base64::decode(&mining_report_request.preimage) {
         Ok(preimage_bytes) => preimage_bytes,
@@ -358,6 +349,30 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Invalid difficulty in preimage JSON."),
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+        }));
+    }
+
+    let preimage_timestamp = match preimage.timestamp.as_f64() {
+        Some(preimage_timestamp) => preimage_timestamp,
+        None => {
+            return Ok(web::Json(MiningReportResponse {
+                status: String::from(JSON_STATUS_ERROR),
+                error: String::from("Could not convert preimage timestamp to f64."),
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+            }))
+        }
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let preimage_timestamp = preimage_timestamp.round() as i64;
+    if !webcash_economy.is_valid_proof_of_work(
+        work,
+        &mining_report_request.preimage,
+        preimage_timestamp,
+    ) {
+        return Ok(web::Json(MiningReportResponse {
+            status: String::from(JSON_STATUS_ERROR),
+            error: String::from("Invalid proof of work."),
             difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }

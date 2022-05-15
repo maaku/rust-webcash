@@ -21,6 +21,7 @@ name = "webcash"
 [dependencies]
 actix-web = "4"
 base64 = "0.13.0"
+chrono = "0.4.19"
 log = "0.4.17"
 pretty_env_logger = "0.4.0"
 primitive-types = "0.11.1"
