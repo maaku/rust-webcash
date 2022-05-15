@@ -1,8 +1,3 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-
 use thousands::Separable;
 #[macro_use]
 extern crate log;
@@ -110,14 +105,14 @@ pub fn parse_webcash_tokens(
     Ok(webcash_tokens)
 }
 
-impl fmt::Display for WebcashTokenKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for WebcashTokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", webcash_token_kind_to_string(self))
     }
 }
 
-impl fmt::Display for WebcashToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for WebcashToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         assert!(is_webcash_token_object(self));
         write!(f, "{}", webcash_token_to_string(self))
     }
@@ -317,7 +312,7 @@ fn serde_default_literals_workaround_default_true() -> bool {
 
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
-    public_hash_to_amount_state: HashMap<String, AmountState>,
+    public_hash_to_amount_state: std::collections::HashMap<String, AmountState>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
 }
@@ -345,7 +340,7 @@ impl WebcashEconomy {
     #[must_use]
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
-            public_hash_to_amount_state: HashMap::default(),
+            public_hash_to_amount_state: std::collections::HashMap::default(),
             persist_to_disk,
         };
         if webcash_economy.persist_to_disk {
@@ -520,8 +515,8 @@ impl WebcashEconomy {
         if !std::path::Path::new(WEBCASH_ECONOMY_JSON_FILE).exists() {
             return;
         }
-        let file = File::open(WEBCASH_ECONOMY_JSON_FILE).unwrap();
-        let reader = BufReader::new(file);
+        let file = std::fs::File::open(WEBCASH_ECONOMY_JSON_FILE).unwrap();
+        let reader = std::io::BufReader::new(file);
         let webcash_economy: WebcashEconomy = serde_json::from_reader(reader).unwrap();
         *self = webcash_economy;
     }
@@ -530,8 +525,8 @@ impl WebcashEconomy {
         assert!(self.persist_to_disk);
         let now = std::time::Instant::now();
         let temporary_filename = format!("{}.{}", WEBCASH_ECONOMY_JSON_FILE, std::process::id());
-        let file = File::create(&temporary_filename).unwrap();
-        let writer = BufWriter::new(file);
+        let file = std::fs::File::create(&temporary_filename).unwrap();
+        let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, self).unwrap();
         std::fs::rename(temporary_filename, WEBCASH_ECONOMY_JSON_FILE).unwrap();
         trace!("Sync to disk took {} ms.", now.elapsed().as_millis());

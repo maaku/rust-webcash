@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use actix_web::{
     get, http::header::ContentType, post, web, App, HttpResponse, HttpServer, Responder, Result,
 };
@@ -430,7 +427,7 @@ struct HealthCheckResponse {
     status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    results: HashMap<String, HealthCheckSpentResponse>,
+    results: std::collections::HashMap<String, HealthCheckSpentResponse>,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -438,7 +435,7 @@ struct HealthCheckResponse {
 fn json_health_check_response(
     status_message: &str,
     error_message: &str,
-    results: HashMap<String, HealthCheckSpentResponse>,
+    results: std::collections::HashMap<String, HealthCheckSpentResponse>,
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(HealthCheckResponse {
@@ -478,7 +475,7 @@ async fn health_check(
             return Ok(json_health_check_response(
                 JSON_STATUS_ERROR,
                 "Invalid token(s).",
-                HashMap::<String, HealthCheckSpentResponse>::default(),
+                std::collections::HashMap::<String, HealthCheckSpentResponse>::default(),
             ))
         }
     };
@@ -486,7 +483,7 @@ async fn health_check(
     assert!(webcash_tokens.len() == health_check_request.len());
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
-    let mut results = HashMap::<String, HealthCheckSpentResponse>::default();
+    let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
     for webcash_token in &webcash_tokens {
         let public_webcash_token = if webcash_token.token_kind == webcash::WebcashTokenKind::Public
         {
@@ -511,7 +508,7 @@ async fn health_check(
 }
 
 struct WebcashApplicationState {
-    webcash_economy: Mutex<webcash::WebcashEconomy>,
+    webcash_economy: std::sync::Mutex<webcash::WebcashEconomy>,
 }
 
 #[actix_web::main]
@@ -537,7 +534,7 @@ async fn main() -> std::io::Result<()> {
     info!("Set the environment variable RUST_LOG=debug to print debug information.");
     info!("Quit the server with CONTROL-C.");
     let webcash_application_state = web::Data::new(WebcashApplicationState {
-        webcash_economy: Mutex::new(webcash_economy),
+        webcash_economy: std::sync::Mutex::new(webcash_economy),
     });
     HttpServer::new(move || {
         App::new()
