@@ -323,7 +323,7 @@ pub struct WebcashEconomy {
 }
 
 const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
-const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
+const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u32 = 20;
 const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
@@ -333,7 +333,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_difficulty_target_bits(&self) -> u8 {
+    pub fn get_difficulty_target_bits(&self) -> u32 {
         DUMMY_VALUE_DIFFICULTY_TARGET_BITS
     }
 
@@ -353,6 +353,17 @@ impl WebcashEconomy {
             webcash_economy.sync_to_disk();
         }
         webcash_economy
+    }
+
+    // TODO: Check proof of work age (timestamp)
+    #[must_use]
+    pub fn is_valid_proof_of_work(&self, work: primitive_types::U256, preimage: &str) -> bool {
+        if work.leading_zeros() < self.get_difficulty_target_bits() {
+            return false;
+        }
+        let preimage_hash = Sha256::digest(preimage);
+        let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
+        preimage_hash_as_u256 == work
     }
 
     #[must_use]

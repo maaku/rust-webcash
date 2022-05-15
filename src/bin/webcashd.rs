@@ -176,7 +176,7 @@ async fn replace(
 
 #[derive(Serialize)]
 struct TargetResponse {
-    difficulty_target_bits: u8,
+    difficulty_target_bits: u32,
     ratio: f32,
     mining_amount: String,
     mining_subsidy_amount: String,
@@ -208,7 +208,7 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
 struct StatsResponse {
     circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
     circulation: u64, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
-    difficulty_target_bits: u8,
+    difficulty_target_bits: u32,
     ratio: f64,            // TODO/FIX: float here but string (decimal) in target API call.
     mining_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
     mining_subsidy_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
@@ -249,7 +249,7 @@ async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    work: u128, // TODO: Use u256 here.
+    work: serde_json::Number,
     preimage: String,
     legalese: LegaleseRequest,
 }
@@ -259,21 +259,26 @@ struct MiningReportResponse {
     status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    difficulty_target_bits: u8,
+    difficulty_target_bits: u32,
 }
 
 #[derive(Deserialize)]
 struct PreimageRequest {
     webcash: Vec<String>,
     subsidy: Vec<String>,
-    nonce: u64,
-    timestamp: Decimal,
-    difficulty: u8,
+    #[serde(rename = "nonce")]
+    _nonce: u64,
+    timestamp: serde_json::Number,
+    difficulty: u32,
     legalese: LegaleseRequest,
 }
 
 const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
+
+fn serde_json_number_to_u256(n: &serde_json::Number) -> Option<primitive_types::U256> {
+    primitive_types::U256::from_dec_str(&format!("{}", n)).ok()
+}
 
 #[post("/api/v1/mining_report")]
 #[cfg(not(tarpaulin_include))]
@@ -288,6 +293,25 @@ async fn mining_report(
         return Ok(web::Json(MiningReportResponse {
             status: String::from(JSON_STATUS_ERROR),
             error: String::from("Terms of service not accepted."),
+            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+        }));
+    }
+
+    let work = match serde_json_number_to_u256(&mining_report_request.work) {
+        Some(work) => work,
+        None => {
+            return Ok(web::Json(MiningReportResponse {
+                status: String::from(JSON_STATUS_ERROR),
+                error: String::from("Could not decode work as u256."),
+                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
+            }))
+        }
+    };
+
+    if !webcash_economy.is_valid_proof_of_work(work, &mining_report_request.preimage) {
+        return Ok(web::Json(MiningReportResponse {
+            status: String::from(JSON_STATUS_ERROR),
+            error: String::from("Invalid proof of work."),
             difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         }));
     }
@@ -373,6 +397,12 @@ async fn mining_report(
             }))
         }
     };
+
+    assert!(work.leading_zeros() >= webcash_economy.get_difficulty_target_bits());
+    assert_eq!(
+        preimage.difficulty,
+        webcash_economy.get_difficulty_target_bits()
+    );
 
     let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
     if !mining_successful {
