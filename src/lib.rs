@@ -324,6 +324,26 @@ const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
     #[must_use]
+    pub fn get_epoch(&self) -> u32 {
+        epoch(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_total_circulation(&self) -> Decimal {
+        total_circulation(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_mining_amount(&self) -> Decimal {
+        mining_amount_for_mining_report(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_subsidy_amount(&self) -> Decimal {
+        mining_subsidy_amount_for_mining_report(self.get_mining_reports())
+    }
+
+    #[must_use]
     pub fn get_mining_reports(&self) -> u32 {
         DUMMY_VALUE_MINING_REPORTS
     }
@@ -607,14 +627,14 @@ fn mining_amount_per_mining_report_in_epoch(epoch: u32) -> Decimal {
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
 #[must_use]
-pub fn mining_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+fn mining_amount_for_mining_report(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     mining_amount_per_mining_report_in_epoch(epoch(mining_report_number))
 }
 
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
-pub fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     (mining_amount_for_mining_report(mining_report_number) * decimal(MINING_SUBSIDY_FRACTION))
         .round_dp(WEBCASH_DECIMALS)
@@ -622,13 +642,13 @@ pub fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Dec
 }
 
 #[must_use]
-pub fn epoch(mining_report_number: u32) -> u32 {
+fn epoch(mining_report_number: u32) -> u32 {
     assert!(mining_report_number >= 1);
     (mining_report_number - 1) / MINING_REPORTS_PER_EPOCH
 }
 
 #[must_use]
-pub fn total_circulation(mining_report_number: u32) -> Decimal {
+fn total_circulation(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     let mut total_circulation = Decimal::default();
     let mut mining_reports_in_current_epoch = mining_report_number;

@@ -168,20 +168,13 @@ struct TargetResponse {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
-    // TODO: Fill with real data.
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(TargetResponse {
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio(),
-        mining_amount: webcash::mining_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+        mining_amount: webcash_economy.get_mining_amount().to_string(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        epoch: webcash_economy.get_epoch(),
     })
 }
 
@@ -201,29 +194,24 @@ struct StatsResponse {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
-    // TODO: Fill with real data.
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        circulation_formatted: webcash::total_circulation(webcash_economy.get_mining_reports())
+        circulation_formatted: webcash_economy
+            .get_total_circulation()
             .trunc()
             .to_u64()
             .unwrap()
-            .separate_with_commas(), // NOTE: Not exact.
-        circulation: webcash::total_circulation(webcash_economy.get_mining_reports())
+            .separate_with_commas(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
+        circulation: webcash_economy
+            .get_total_circulation()
             .trunc()
             .to_u64()
-            .unwrap(), // NOTE: Not exact.
+            .unwrap(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio().to_f64().unwrap(),
-        mining_amount: webcash::mining_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+        mining_amount: webcash_economy.get_mining_amount().to_string(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        epoch: webcash_economy.get_epoch(),
         mining_reports: webcash_economy.get_mining_reports(),
     })
 }
@@ -376,8 +364,7 @@ async fn mining_report(
         );
     }
 
-    // TODO: Check validity of PreimageRequest. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
-
+    // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
     let webcash_tokens = match webcash::parse_webcash_tokens(
         &preimage.webcash,
         &webcash::WebcashTokenKind::Secret,
@@ -394,9 +381,7 @@ async fn mining_report(
     };
 
     let mining_amount: Decimal = webcash_tokens.iter().map(|wc| wc.amount).sum();
-    if mining_amount
-        != webcash::mining_amount_for_mining_report(webcash_economy.get_mining_reports())
-    {
+    if mining_amount != webcash_economy.get_mining_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Unexpected mining amount.",
@@ -421,9 +406,7 @@ async fn mining_report(
     };
 
     let subsidy_amount: Decimal = subsidy_tokens.iter().map(|wc| wc.amount).sum();
-    if subsidy_amount
-        != webcash::mining_subsidy_amount_for_mining_report(webcash_economy.get_mining_reports())
-    {
+    if subsidy_amount != webcash_economy.get_subsidy_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Unexpected subsidy amount.",
@@ -431,14 +414,8 @@ async fn mining_report(
         );
     }
 
-    assert_eq!(
-        mining_amount,
-        webcash::mining_amount_for_mining_report(webcash_economy.get_mining_reports())
-    );
-    assert_eq!(
-        subsidy_amount,
-        webcash::mining_subsidy_amount_for_mining_report(webcash_economy.get_mining_reports())
-    );
+    assert_eq!(mining_amount, webcash_economy.get_mining_amount());
+    assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
     assert!(subsidy_amount <= mining_amount);
     assert!(work.leading_zeros() >= webcash_economy.get_difficulty_target_bits());
     assert_eq!(
@@ -446,7 +423,7 @@ async fn mining_report(
         webcash_economy.get_difficulty_target_bits()
     );
 
-    // TODO: Check mining amounts.
+    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc.
     let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
     if !mining_successful {
         return json_mining_report_response(
