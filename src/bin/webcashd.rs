@@ -477,22 +477,11 @@ async fn health_check(
     data: web::Data<WebcashApplicationState>,
     health_check_request: web::Json<Vec<String>>,
 ) -> impl actix_web::Responder {
-    let mut webcash_tokens = webcash::parse_webcash_tokens(
+    let webcash_tokens = match webcash::parse_webcash_tokens(
         &health_check_request,
         &webcash::WebcashTokenKind::Public,
         MAX_HEALTH_CHECK_TOKENS,
-    );
-    if webcash_tokens.is_err() {
-        // Special case to allow compatibility with Python client which in some
-        // parts of the client code sends secret instead of public tokens.
-        webcash_tokens = webcash::parse_webcash_tokens(
-            &health_check_request,
-            &webcash::WebcashTokenKind::Secret,
-            MAX_HEALTH_CHECK_TOKENS,
-        );
-    }
-
-    let webcash_tokens = match webcash_tokens {
+    ) {
         Ok(webcash_tokens) => webcash_tokens,
         Err(_) => {
             return json_health_check_response(
@@ -507,21 +496,15 @@ async fn health_check(
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
-    for webcash_token in &webcash_tokens {
-        let public_webcash_token = if webcash_token.token_kind == webcash::WebcashTokenKind::Public
-        {
-            webcash_token.clone()
-        } else {
-            webcash_token.to_public()
-        };
+    for public_webcash_token in &webcash_tokens {
         let mut spent: Option<bool> = None;
         let mut amount: Option<String> = None;
-        if let Some(amount_state) = webcash_economy.get_using_public_token(&public_webcash_token) {
+        if let Some(amount_state) = webcash_economy.get_using_public_token(public_webcash_token) {
             spent = Some(amount_state.spent);
             amount = Some(amount_state.amount.to_string());
         }
         results.insert(
-            public_webcash_token.to_string(), // TODO: Correct key even if bogus/non-matching (if amount does not match)?
+            public_webcash_token.to_string(),
             HealthCheckSpentResponse { spent, amount },
         );
     }

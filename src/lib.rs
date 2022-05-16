@@ -36,7 +36,7 @@ pub struct WebcashToken {
 
 impl WebcashToken {
     #[must_use]
-    pub fn to_public(&self) -> WebcashToken {
+    fn to_public(&self) -> WebcashToken {
         assert!(self.token_kind == WebcashTokenKind::Secret);
         WebcashToken {
             amount: self.amount,
