@@ -58,6 +58,11 @@ fn contains_duplicates(webcash_tokens: &Vec<WebcashToken>) -> bool {
 }
 
 #[must_use]
+pub fn sum(tokens: &[WebcashToken]) -> Decimal {
+    tokens.iter().map(|wc| wc.amount).sum()
+}
+
+#[must_use]
 fn are_syntactically_valid_tokens(
     tokens: &Vec<WebcashToken>,
     allowed_token_type: &WebcashTokenKind,
@@ -71,7 +76,7 @@ fn are_syntactically_valid_tokens(
     if contains_duplicates(tokens) {
         return false;
     }
-    let total_amount = tokens.iter().map(|wc| wc.amount).sum();
+    let total_amount = sum(tokens);
     if !is_webcash_amount(total_amount) {
         return false;
     }
@@ -530,7 +535,7 @@ impl WebcashEconomy {
         }
         assert_eq!(
             self.get_total_unspent() - total_unspent_before,
-            secret_outputs.iter().map(|wc| wc.amount).sum::<Decimal>()
+            sum(secret_outputs)
         );
         if self.persist_to_disk {
             self.sync_to_disk();
@@ -593,9 +598,7 @@ impl WebcashEconomy {
         if contains_duplicates(&[secret_inputs.as_slice(), secret_outputs.as_slice()].concat()) {
             return false;
         }
-        if secret_inputs.iter().map(|wc| wc.amount).sum::<Decimal>()
-            != secret_outputs.iter().map(|wc| wc.amount).sum::<Decimal>()
-        {
+        if sum(secret_inputs) != sum(secret_outputs) {
             return false;
         }
         for secret_input in secret_inputs {

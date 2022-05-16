@@ -141,8 +141,8 @@ async fn replace(
         .iter()
         .all(|wc| wc.token_kind == webcash::WebcashTokenKind::Secret));
 
-    let total_input: Decimal = inputs.iter().map(|wc| wc.amount).sum();
-    let total_output: Decimal = outputs.iter().map(|wc| wc.amount).sum();
+    let total_input = webcash::sum(&inputs);
+    let total_output = webcash::sum(&outputs);
     if total_input != total_output {
         return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
     }
@@ -380,7 +380,7 @@ async fn mining_report(
         }
     };
 
-    let mining_amount: Decimal = webcash_tokens.iter().map(|wc| wc.amount).sum();
+    let mining_amount = webcash::sum(&webcash_tokens);
     if mining_amount != webcash_economy.get_mining_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -405,7 +405,7 @@ async fn mining_report(
         }
     };
 
-    let subsidy_amount: Decimal = subsidy_tokens.iter().map(|wc| wc.amount).sum();
+    let subsidy_amount = webcash::sum(&subsidy_tokens);
     if subsidy_amount != webcash_economy.get_subsidy_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
