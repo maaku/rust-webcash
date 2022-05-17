@@ -377,22 +377,14 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn is_valid_proof_of_work(
-        &self,
-        work: primitive_types::U256,
-        preimage: &str,
-        preimage_timestamp: i64,
-    ) -> bool {
-        if work.leading_zeros() < u32::from(self.get_difficulty_target_bits()) {
-            return false;
-        }
+    pub fn is_valid_proof_of_work(&self, preimage: &str, preimage_timestamp: i64) -> bool {
         let timestamp_diff = (chrono::Utc::now().timestamp() - preimage_timestamp).unsigned_abs();
         if timestamp_diff > MINING_SOLUTION_MAX_AGE_IN_SECONDS {
             return false;
         }
         let preimage_hash = Sha256::digest(preimage);
         let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
-        preimage_hash_as_u256 == work
+        preimage_hash_as_u256.leading_zeros() >= u32::from(self.get_difficulty_target_bits())
     }
 
     #[must_use]

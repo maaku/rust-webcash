@@ -218,7 +218,8 @@ async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    work: serde_json::Number,
+    #[serde(rename = "work")]
+    _work: serde_json::Number,
     preimage: String,
     legalese: LegaleseRequest,
 }
@@ -244,10 +245,6 @@ struct PreimageRequest {
 
 const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
-
-fn serde_json_number_to_u256(n: &serde_json::Number) -> Option<primitive_types::U256> {
-    primitive_types::U256::from_dec_str(&format!("{}", n)).ok()
-}
 
 #[cfg(not(tarpaulin_include))]
 #[must_use]
@@ -280,17 +277,6 @@ async fn mining_report(
             difficulty_target_bits,
         );
     }
-
-    let work = match serde_json_number_to_u256(&mining_report_request.work) {
-        Some(work) => work,
-        None => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not decode work as u256.",
-                difficulty_target_bits,
-            );
-        }
-    };
 
     let preimage_bytes = match base64::decode(&mining_report_request.preimage) {
         Ok(preimage_bytes) => preimage_bytes,
@@ -325,6 +311,7 @@ async fn mining_report(
         }
     };
 
+    // TODO: Relevant to check? We've already checked the legalese once in this request above.
     if !preimage.legalese.terms {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -333,6 +320,7 @@ async fn mining_report(
         );
     }
 
+    // TODO: Relevant to check? The target difficulty is not relevant as long as the achieved difficulty is sufficient?
     if preimage.difficulty != u32::from(difficulty_target_bits) {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -353,11 +341,8 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
-    if !webcash_economy.is_valid_proof_of_work(
-        work,
-        &mining_report_request.preimage,
-        preimage_timestamp,
-    ) {
+    if !webcash_economy.is_valid_proof_of_work(&mining_report_request.preimage, preimage_timestamp)
+    {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Invalid proof of work.",
@@ -418,7 +403,6 @@ async fn mining_report(
     assert_eq!(mining_amount, webcash_economy.get_mining_amount());
     assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
     assert!(subsidy_amount <= mining_amount);
-    assert!(work.leading_zeros() >= difficulty_target_bits.into());
     assert_eq!(preimage.difficulty, u32::from(difficulty_target_bits));
 
     // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc. Add all checks above. Remove public access to create_tokens.
