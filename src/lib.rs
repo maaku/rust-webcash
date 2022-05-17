@@ -324,7 +324,7 @@ pub struct WebcashEconomy {
 }
 
 const DUMMY_VALUE_MINING_REPORTS: u32 = 1_000_000;
-const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u32 = 20;
+const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
 const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
@@ -354,7 +354,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_difficulty_target_bits(&self) -> u32 {
+    pub fn get_difficulty_target_bits(&self) -> u8 {
         DUMMY_VALUE_DIFFICULTY_TARGET_BITS
     }
 
@@ -383,7 +383,7 @@ impl WebcashEconomy {
         preimage: &str,
         preimage_timestamp: i64,
     ) -> bool {
-        if work.leading_zeros() < self.get_difficulty_target_bits() {
+        if work.leading_zeros() < u32::from(self.get_difficulty_target_bits()) {
             return false;
         }
         let timestamp_diff = (chrono::Utc::now().timestamp() - preimage_timestamp).unsigned_abs();

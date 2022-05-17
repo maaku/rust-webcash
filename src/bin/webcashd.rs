@@ -157,7 +157,7 @@ async fn replace(
 
 #[derive(Serialize)]
 struct TargetResponse {
-    difficulty_target_bits: u32,
+    difficulty_target_bits: u8,
     ratio: f32,
     mining_amount: String,
     mining_subsidy_amount: String,
@@ -182,7 +182,7 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
 struct StatsResponse {
     circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
     circulation: u64, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
-    difficulty_target_bits: u32,
+    difficulty_target_bits: u8,
     ratio: f64,            // TODO/FIX: float here but string (decimal) in target API call.
     mining_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
     mining_subsidy_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
@@ -228,7 +228,7 @@ struct MiningReportResponse {
     status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    difficulty_target_bits: u32,
+    difficulty_target_bits: u8,
 }
 
 #[derive(Deserialize)]
@@ -254,7 +254,7 @@ fn serde_json_number_to_u256(n: &serde_json::Number) -> Option<primitive_types::
 fn json_mining_report_response(
     status_message: &str,
     error_message: &str,
-    difficulty_target_bits: u32,
+    difficulty_target_bits: u8,
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(MiningReportResponse {
@@ -272,11 +272,12 @@ async fn mining_report(
     mining_report_request: web::Json<MiningReportRequest>,
 ) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
+    let difficulty_target_bits = webcash_economy.get_difficulty_target_bits();
     if !mining_report_request.legalese.terms {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Terms of service not accepted.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
@@ -286,7 +287,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not decode work as u256.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -297,7 +298,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not base64 decode preimage.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -308,7 +309,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not UTF-8 decode preimage bytes.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -319,7 +320,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not JSON decode preimage string.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -328,15 +329,15 @@ async fn mining_report(
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Terms of service not accepted in preimage JSON.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
-    if preimage.difficulty != webcash_economy.get_difficulty_target_bits() {
+    if preimage.difficulty != u32::from(difficulty_target_bits) {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Invalid difficulty in preimage JSON.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
@@ -346,7 +347,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not convert preimage timestamp to f64.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -360,7 +361,7 @@ async fn mining_report(
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Invalid proof of work.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
@@ -375,7 +376,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not parse webcash tokens.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -385,7 +386,7 @@ async fn mining_report(
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Unexpected mining amount.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
@@ -400,7 +401,7 @@ async fn mining_report(
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
                 "Could not parse subsidy tokens.",
-                webcash_economy.get_difficulty_target_bits(),
+                difficulty_target_bits,
             );
         }
     };
@@ -410,33 +411,26 @@ async fn mining_report(
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Unexpected subsidy amount.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
 
     assert_eq!(mining_amount, webcash_economy.get_mining_amount());
     assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
     assert!(subsidy_amount <= mining_amount);
-    assert!(work.leading_zeros() >= webcash_economy.get_difficulty_target_bits());
-    assert_eq!(
-        preimage.difficulty,
-        webcash_economy.get_difficulty_target_bits()
-    );
+    assert!(work.leading_zeros() >= difficulty_target_bits.into());
+    assert_eq!(preimage.difficulty, u32::from(difficulty_target_bits));
 
-    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc.
+    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc. Add all checks above. Remove public access to create_tokens.
     let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
     if !mining_successful {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
             "Mining failed.",
-            webcash_economy.get_difficulty_target_bits(),
+            difficulty_target_bits,
         );
     }
-    json_mining_report_response(
-        JSON_STATUS_SUCCESS,
-        "",
-        webcash_economy.get_difficulty_target_bits(),
-    )
+    json_mining_report_response(JSON_STATUS_SUCCESS, "", difficulty_target_bits)
 }
 
 #[derive(Serialize)]
@@ -496,6 +490,7 @@ async fn health_check(
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
+    // TODO: Move this to separate method in WebcashEconomy. Remove public access for get_using_public_token.
     for public_webcash_token in &webcash_tokens {
         let mut spent: Option<bool> = None;
         let mut amount: Option<String> = None;
