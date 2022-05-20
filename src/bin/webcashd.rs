@@ -1,8 +1,5 @@
-use std::collections::HashMap;
-use std::sync::Mutex;
-
 use actix_web::{
-    get, http::header::ContentType, post, web, App, HttpResponse, HttpServer, Responder, Result,
+    get, http::header::ContentType, post, web, App, HttpResponse, HttpServer, Responder,
 };
 use thousands::Separable;
 #[macro_use]
@@ -113,12 +110,9 @@ const MAX_REPLACEMENT_OUTPUT_TOKENS: usize = 100;
 async fn replace(
     data: web::Data<WebcashApplicationState>,
     replace_request: web::Json<ReplaceRequest>,
-) -> Result<impl Responder> {
+) -> impl Responder {
     if !replace_request.legalese.terms {
-        return Ok(json_replace_response(
-            JSON_STATUS_ERROR,
-            "Terms of service not accepted.",
-        ));
+        return json_replace_response(JSON_STATUS_ERROR, "Terms of service not accepted.");
     }
 
     let inputs = match webcash::parse_webcash_tokens(
@@ -127,12 +121,7 @@ async fn replace(
         MAX_REPLACEMENT_INPUT_TOKENS,
     ) {
         Ok(inputs) => inputs,
-        Err(_) => {
-            return Ok(json_replace_response(
-                JSON_STATUS_ERROR,
-                "Invalid input(s).",
-            ))
-        }
+        Err(_) => return json_replace_response(JSON_STATUS_ERROR, "Invalid input(s)."),
     };
     assert_eq!(inputs.len(), replace_request.webcashes.len());
     assert!(inputs
@@ -145,33 +134,25 @@ async fn replace(
         MAX_REPLACEMENT_OUTPUT_TOKENS,
     ) {
         Ok(outputs) => outputs,
-        Err(_) => {
-            return Ok(json_replace_response(
-                JSON_STATUS_ERROR,
-                "Invalid output(s).",
-            ))
-        }
+        Err(_) => return json_replace_response(JSON_STATUS_ERROR, "Invalid output(s)."),
     };
     assert_eq!(outputs.len(), replace_request.new_webcashes.len());
     assert!(outputs
         .iter()
         .all(|wc| wc.token_kind == webcash::WebcashTokenKind::Secret));
 
-    let total_input: Decimal = inputs.iter().map(|wc| wc.amount).sum();
-    let total_output: Decimal = outputs.iter().map(|wc| wc.amount).sum();
+    let total_input = webcash::sum(&inputs);
+    let total_output = webcash::sum(&outputs);
     if total_input != total_output {
-        return Ok(json_replace_response(JSON_STATUS_ERROR, "Amount mismatch."));
+        return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
     }
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let replacement_successful = webcash_economy.replace_tokens(&inputs, &outputs);
     if !replacement_successful {
-        return Ok(json_replace_response(
-            JSON_STATUS_ERROR,
-            "Replacement failed.",
-        ));
+        return json_replace_response(JSON_STATUS_ERROR, "Replacement failed.");
     }
-    Ok(json_replace_response(JSON_STATUS_SUCCESS, ""))
+    json_replace_response(JSON_STATUS_SUCCESS, "")
 }
 
 #[derive(Serialize)]
@@ -187,20 +168,13 @@ struct TargetResponse {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
-    // TODO: Fill with real data.
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(TargetResponse {
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio(),
-        mining_amount: webcash::mining_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+        mining_amount: webcash_economy.get_mining_amount().to_string(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        epoch: webcash_economy.get_epoch(),
     })
 }
 
@@ -220,36 +194,32 @@ struct StatsResponse {
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
-    // TODO: Fill with real data.
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        circulation_formatted: webcash::total_circulation(webcash_economy.get_mining_reports())
+        circulation_formatted: webcash_economy
+            .get_total_circulation()
             .trunc()
             .to_u64()
             .unwrap()
-            .separate_with_commas(), // NOTE: Not exact.
-        circulation: webcash::total_circulation(webcash_economy.get_mining_reports())
+            .separate_with_commas(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
+        circulation: webcash_economy
+            .get_total_circulation()
             .trunc()
             .to_u64()
-            .unwrap(), // NOTE: Not exact.
+            .unwrap(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio().to_f64().unwrap(),
-        mining_amount: webcash::mining_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        mining_subsidy_amount: webcash::mining_subsidy_amount_for_mining_report(
-            webcash_economy.get_mining_reports(),
-        )
-        .to_string(),
-        epoch: webcash::epoch(webcash_economy.get_mining_reports()),
+        mining_amount: webcash_economy.get_mining_amount().to_string(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        epoch: webcash_economy.get_epoch(),
         mining_reports: webcash_economy.get_mining_reports(),
     })
 }
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    work: u128, // TODO: Use u256 here.
+    #[serde(rename = "work")]
+    _work: serde_json::Number,
     preimage: String,
     legalese: LegaleseRequest,
 }
@@ -266,14 +236,30 @@ struct MiningReportResponse {
 struct PreimageRequest {
     webcash: Vec<String>,
     subsidy: Vec<String>,
-    nonce: u64,
-    timestamp: Decimal,
-    difficulty: u8,
+    #[serde(rename = "nonce")]
+    _nonce: u64,
+    timestamp: serde_json::Number,
+    difficulty: u32,
     legalese: LegaleseRequest,
 }
 
 const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
+
+#[cfg(not(tarpaulin_include))]
+#[must_use]
+fn json_mining_report_response(
+    status_message: &str,
+    error_message: &str,
+    difficulty_target_bits: u8,
+) -> impl actix_web::Responder {
+    assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
+    web::Json(MiningReportResponse {
+        status: status_message.to_string(),
+        error: error_message.to_string(),
+        difficulty_target_bits,
+    })
+}
 
 #[post("/api/v1/mining_report")]
 #[cfg(not(tarpaulin_include))]
@@ -281,68 +267,90 @@ const MAX_MINING_OUTPUT_TOKENS: usize = 100;
 async fn mining_report(
     data: web::Data<WebcashApplicationState>,
     mining_report_request: web::Json<MiningReportRequest>,
-) -> Result<impl Responder> {
+) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
-    // TODO: Fill with real data.
+    let difficulty_target_bits = webcash_economy.get_difficulty_target_bits();
     if !mining_report_request.legalese.terms {
-        return Ok(web::Json(MiningReportResponse {
-            status: String::from(JSON_STATUS_ERROR),
-            error: String::from("Terms of service not accepted."),
-            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        }));
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Terms of service not accepted.",
+            difficulty_target_bits,
+        );
     }
 
     let preimage_bytes = match base64::decode(&mining_report_request.preimage) {
         Ok(preimage_bytes) => preimage_bytes,
         Err(_) => {
-            return Ok(web::Json(MiningReportResponse {
-                status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not base64 decode preimage."),
-                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-            }))
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not base64 decode preimage.",
+                difficulty_target_bits,
+            );
         }
     };
 
     let preimage_as_str = match std::str::from_utf8(&preimage_bytes) {
         Ok(preimage_as_str) => preimage_as_str,
         Err(_) => {
-            return Ok(web::Json(MiningReportResponse {
-                status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not UTF-8 decode preimage bytes."),
-                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-            }))
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not UTF-8 decode preimage bytes.",
+                difficulty_target_bits,
+            );
         }
     };
 
     let preimage: PreimageRequest = match serde_json::from_str(preimage_as_str) {
         Ok(preimage) => preimage,
         Err(_) => {
-            return Ok(web::Json(MiningReportResponse {
-                status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not JSON decode preimage string."),
-                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-            }))
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not JSON decode preimage string.",
+                difficulty_target_bits,
+            );
         }
     };
 
+    // TODO: Relevant to check? We've already checked the legalese once in this request above.
     if !preimage.legalese.terms {
-        return Ok(web::Json(MiningReportResponse {
-            status: String::from(JSON_STATUS_ERROR),
-            error: String::from("Terms of service not accepted in preimage JSON."),
-            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        }));
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Terms of service not accepted in preimage JSON.",
+            difficulty_target_bits,
+        );
     }
 
-    if preimage.difficulty != webcash_economy.get_difficulty_target_bits() {
-        return Ok(web::Json(MiningReportResponse {
-            status: String::from(JSON_STATUS_ERROR),
-            error: String::from("Invalid difficulty in preimage JSON."),
-            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        }));
+    // TODO: Relevant to check? The target difficulty is not relevant as long as the achieved difficulty is sufficient?
+    if preimage.difficulty != u32::from(difficulty_target_bits) {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Invalid difficulty in preimage JSON.",
+            difficulty_target_bits,
+        );
     }
 
-    // TODO: Check validity of PreimageRequest. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
+    let preimage_timestamp = match preimage.timestamp.as_f64() {
+        Some(preimage_timestamp) => preimage_timestamp,
+        None => {
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not convert preimage timestamp to f64.",
+                difficulty_target_bits,
+            );
+        }
+    };
+    #[allow(clippy::cast_possible_truncation)]
+    let preimage_timestamp = preimage_timestamp.round() as i64;
+    if !webcash_economy.is_valid_proof_of_work(&mining_report_request.preimage, preimage_timestamp)
+    {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Invalid proof of work.",
+            difficulty_target_bits,
+        );
+    }
 
+    // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
     let webcash_tokens = match webcash::parse_webcash_tokens(
         &preimage.webcash,
         &webcash::WebcashTokenKind::Secret,
@@ -350,43 +358,63 @@ async fn mining_report(
     ) {
         Ok(webcash_tokens) => webcash_tokens,
         Err(_) => {
-            return Ok(web::Json(MiningReportResponse {
-                status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not parse webcash tokens."),
-                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-            }))
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not parse webcash tokens.",
+                difficulty_target_bits,
+            );
         }
     };
 
-    // TODO: Check the validity of the subsidy. Correct amount? Part of webcash_tokens? Claim and store server operator's tokens.
-    let _subsidy_tokens = match webcash::parse_webcash_tokens(
+    let mining_amount = webcash::sum(&webcash_tokens);
+    if mining_amount != webcash_economy.get_mining_amount() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Unexpected mining amount.",
+            difficulty_target_bits,
+        );
+    }
+
+    // TODO: Claim and store server operator's tokens.
+    let subsidy_tokens = match webcash::parse_webcash_tokens(
         &preimage.subsidy,
         &webcash::WebcashTokenKind::Secret,
         MAX_MINING_OUTPUT_SUBSIDY_TOKENS,
     ) {
         Ok(webcash_tokens) => webcash_tokens,
         Err(_) => {
-            return Ok(web::Json(MiningReportResponse {
-                status: String::from(JSON_STATUS_ERROR),
-                error: String::from("Could not parse subsidy tokens."),
-                difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-            }))
+            return json_mining_report_response(
+                JSON_STATUS_ERROR,
+                "Could not parse subsidy tokens.",
+                difficulty_target_bits,
+            );
         }
     };
 
+    let subsidy_amount = webcash::sum(&subsidy_tokens);
+    if subsidy_amount != webcash_economy.get_subsidy_amount() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Unexpected subsidy amount.",
+            difficulty_target_bits,
+        );
+    }
+
+    assert_eq!(mining_amount, webcash_economy.get_mining_amount());
+    assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
+    assert!(subsidy_amount <= mining_amount);
+    assert_eq!(preimage.difficulty, u32::from(difficulty_target_bits));
+
+    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc. Add all checks above. Remove public access to create_tokens.
     let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
     if !mining_successful {
-        return Ok(web::Json(MiningReportResponse {
-            status: String::from(JSON_STATUS_ERROR),
-            error: String::from("Mining failed."),
-            difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        }));
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Mining failed.",
+            difficulty_target_bits,
+        );
     }
-    Ok(web::Json(MiningReportResponse {
-        status: String::from(JSON_STATUS_SUCCESS),
-        error: String::from(""),
-        difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-    }))
+    json_mining_report_response(JSON_STATUS_SUCCESS, "", difficulty_target_bits)
 }
 
 #[derive(Serialize)]
@@ -400,7 +428,7 @@ struct HealthCheckResponse {
     status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    results: HashMap<String, HealthCheckSpentResponse>,
+    results: std::collections::HashMap<String, HealthCheckSpentResponse>,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -408,7 +436,7 @@ struct HealthCheckResponse {
 fn json_health_check_response(
     status_message: &str,
     error_message: &str,
-    results: HashMap<String, HealthCheckSpentResponse>,
+    results: std::collections::HashMap<String, HealthCheckSpentResponse>,
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(HealthCheckResponse {
@@ -426,62 +454,46 @@ const MAX_HEALTH_CHECK_TOKENS: usize = 100;
 async fn health_check(
     data: web::Data<WebcashApplicationState>,
     health_check_request: web::Json<Vec<String>>,
-) -> Result<impl Responder> {
-    let mut webcash_tokens = webcash::parse_webcash_tokens(
+) -> impl actix_web::Responder {
+    let webcash_tokens = match webcash::parse_webcash_tokens(
         &health_check_request,
         &webcash::WebcashTokenKind::Public,
         MAX_HEALTH_CHECK_TOKENS,
-    );
-    if webcash_tokens.is_err() {
-        // Special case to allow compatibility with Python client which in some
-        // parts of the client code sends secret instead of public tokens.
-        webcash_tokens = webcash::parse_webcash_tokens(
-            &health_check_request,
-            &webcash::WebcashTokenKind::Secret,
-            MAX_HEALTH_CHECK_TOKENS,
-        );
-    }
-
-    let webcash_tokens = match webcash_tokens {
+    ) {
         Ok(webcash_tokens) => webcash_tokens,
         Err(_) => {
-            return Ok(json_health_check_response(
+            return json_health_check_response(
                 JSON_STATUS_ERROR,
                 "Invalid token(s).",
-                HashMap::<String, HealthCheckSpentResponse>::default(),
-            ))
+                std::collections::HashMap::<String, HealthCheckSpentResponse>::default(),
+            )
         }
     };
     assert!(!webcash_tokens.is_empty());
     assert!(webcash_tokens.len() == health_check_request.len());
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
-    let mut results = HashMap::<String, HealthCheckSpentResponse>::default();
-    for webcash_token in &webcash_tokens {
-        let public_webcash_token = if webcash_token.token_kind == webcash::WebcashTokenKind::Public
-        {
-            webcash_token.clone()
-        } else {
-            webcash_token.to_public()
-        };
+    let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
+    // TODO: Move this to separate method in WebcashEconomy. Remove public access for get_using_public_token.
+    for public_webcash_token in &webcash_tokens {
         let mut spent: Option<bool> = None;
         let mut amount: Option<String> = None;
-        if let Some(amount_state) = webcash_economy.get_using_public_token(&public_webcash_token) {
+        if let Some(amount_state) = webcash_economy.get_using_public_token(public_webcash_token) {
             spent = Some(amount_state.spent);
             amount = Some(amount_state.amount.to_string());
         }
         results.insert(
-            public_webcash_token.to_string(), // TODO: Correct key even if bogus/non-matching (if amount does not match)?
+            public_webcash_token.to_string(),
             HealthCheckSpentResponse { spent, amount },
         );
     }
     assert!(results.len() == health_check_request.len());
 
-    Ok(json_health_check_response(JSON_STATUS_SUCCESS, "", results))
+    json_health_check_response(JSON_STATUS_SUCCESS, "", results)
 }
 
 struct WebcashApplicationState {
-    webcash_economy: Mutex<webcash::WebcashEconomy>,
+    webcash_economy: std::sync::Mutex<webcash::WebcashEconomy>,
 }
 
 #[actix_web::main]
@@ -507,7 +519,7 @@ async fn main() -> std::io::Result<()> {
     info!("Set the environment variable RUST_LOG=debug to print debug information.");
     info!("Quit the server with CONTROL-C.");
     let webcash_application_state = web::Data::new(WebcashApplicationState {
-        webcash_economy: Mutex::new(webcash_economy),
+        webcash_economy: std::sync::Mutex::new(webcash_economy),
     });
     HttpServer::new(move || {
         App::new()

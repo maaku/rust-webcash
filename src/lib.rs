@@ -1,8 +1,3 @@
-use std::collections::HashMap;
-use std::fmt;
-use std::fs::File;
-use std::io::{BufReader, BufWriter};
-
 use thousands::Separable;
 #[macro_use]
 extern crate log;
@@ -14,8 +9,9 @@ const OPTIONAL_AMOUNT_PREFIX: &str = "e";
 const MAX_WEBCASH: i64 = 210_000_000_000;
 const WEBCASH_DECIMALS: u32 = 8;
 
-const MINING_REPORTS_PER_EPOCH: u32 = 525_000;
 const MINING_AMOUNT_IN_FIRST_EPOCH: i64 = 200_000;
+const MINING_REPORTS_PER_EPOCH: u32 = 525_000;
+const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 15 * 30;
 const MINING_SUBSIDY_FRACTION: &str = "0.05";
 
 const WEBCASH_TOKEN_KIND_IDENTIFIER_PUBLIC: &str = "public";
@@ -40,7 +36,7 @@ pub struct WebcashToken {
 
 impl WebcashToken {
     #[must_use]
-    pub fn to_public(&self) -> WebcashToken {
+    fn to_public(&self) -> WebcashToken {
         assert!(self.token_kind == WebcashTokenKind::Secret);
         WebcashToken {
             amount: self.amount,
@@ -62,6 +58,11 @@ fn contains_duplicates(webcash_tokens: &Vec<WebcashToken>) -> bool {
 }
 
 #[must_use]
+pub fn sum(tokens: &[WebcashToken]) -> Decimal {
+    tokens.iter().map(|wc| wc.amount).sum()
+}
+
+#[must_use]
 fn are_syntactically_valid_tokens(
     tokens: &Vec<WebcashToken>,
     allowed_token_type: &WebcashTokenKind,
@@ -75,7 +76,7 @@ fn are_syntactically_valid_tokens(
     if contains_duplicates(tokens) {
         return false;
     }
-    let total_amount = tokens.iter().map(|wc| wc.amount).sum();
+    let total_amount = sum(tokens);
     if !is_webcash_amount(total_amount) {
         return false;
     }
@@ -110,14 +111,14 @@ pub fn parse_webcash_tokens(
     Ok(webcash_tokens)
 }
 
-impl fmt::Display for WebcashTokenKind {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for WebcashTokenKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", webcash_token_kind_to_string(self))
     }
 }
 
-impl fmt::Display for WebcashToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+impl std::fmt::Display for WebcashToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         assert!(is_webcash_token_object(self));
         write!(f, "{}", webcash_token_to_string(self))
     }
@@ -317,7 +318,7 @@ fn serde_default_literals_workaround_default_true() -> bool {
 
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
-    public_hash_to_amount_state: HashMap<String, AmountState>,
+    public_hash_to_amount_state: std::collections::HashMap<String, AmountState>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
 }
@@ -327,6 +328,26 @@ const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
 const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
+    #[must_use]
+    pub fn get_epoch(&self) -> u32 {
+        epoch(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_total_circulation(&self) -> Decimal {
+        total_circulation(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_mining_amount(&self) -> Decimal {
+        mining_amount_for_mining_report(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_subsidy_amount(&self) -> Decimal {
+        mining_subsidy_amount_for_mining_report(self.get_mining_reports())
+    }
+
     #[must_use]
     pub fn get_mining_reports(&self) -> u32 {
         DUMMY_VALUE_MINING_REPORTS
@@ -345,7 +366,7 @@ impl WebcashEconomy {
     #[must_use]
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
-            public_hash_to_amount_state: HashMap::default(),
+            public_hash_to_amount_state: std::collections::HashMap::default(),
             persist_to_disk,
         };
         if webcash_economy.persist_to_disk {
@@ -353,6 +374,17 @@ impl WebcashEconomy {
             webcash_economy.sync_to_disk();
         }
         webcash_economy
+    }
+
+    #[must_use]
+    pub fn is_valid_proof_of_work(&self, preimage: &str, preimage_timestamp: i64) -> bool {
+        let timestamp_diff = (chrono::Utc::now().timestamp() - preimage_timestamp).unsigned_abs();
+        if timestamp_diff > MINING_SOLUTION_MAX_AGE_IN_SECONDS {
+            return false;
+        }
+        let preimage_hash = Sha256::digest(preimage);
+        let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
+        preimage_hash_as_u256.leading_zeros() >= u32::from(self.get_difficulty_target_bits())
     }
 
     #[must_use]
@@ -495,7 +527,7 @@ impl WebcashEconomy {
         }
         assert_eq!(
             self.get_total_unspent() - total_unspent_before,
-            secret_outputs.iter().map(|wc| wc.amount).sum::<Decimal>()
+            sum(secret_outputs)
         );
         if self.persist_to_disk {
             self.sync_to_disk();
@@ -509,8 +541,8 @@ impl WebcashEconomy {
         if !std::path::Path::new(WEBCASH_ECONOMY_JSON_FILE).exists() {
             return;
         }
-        let file = File::open(WEBCASH_ECONOMY_JSON_FILE).unwrap();
-        let reader = BufReader::new(file);
+        let file = std::fs::File::open(WEBCASH_ECONOMY_JSON_FILE).unwrap();
+        let reader = std::io::BufReader::new(file);
         let webcash_economy: WebcashEconomy = serde_json::from_reader(reader).unwrap();
         *self = webcash_economy;
     }
@@ -519,8 +551,8 @@ impl WebcashEconomy {
         assert!(self.persist_to_disk);
         let now = std::time::Instant::now();
         let temporary_filename = format!("{}.{}", WEBCASH_ECONOMY_JSON_FILE, std::process::id());
-        let file = File::create(&temporary_filename).unwrap();
-        let writer = BufWriter::new(file);
+        let file = std::fs::File::create(&temporary_filename).unwrap();
+        let writer = std::io::BufWriter::new(file);
         serde_json::to_writer(writer, self).unwrap();
         std::fs::rename(temporary_filename, WEBCASH_ECONOMY_JSON_FILE).unwrap();
         trace!("Sync to disk took {} ms.", now.elapsed().as_millis());
@@ -558,9 +590,7 @@ impl WebcashEconomy {
         if contains_duplicates(&[secret_inputs.as_slice(), secret_outputs.as_slice()].concat()) {
             return false;
         }
-        if secret_inputs.iter().map(|wc| wc.amount).sum::<Decimal>()
-            != secret_outputs.iter().map(|wc| wc.amount).sum::<Decimal>()
-        {
+        if sum(secret_inputs) != sum(secret_outputs) {
             return false;
         }
         for secret_input in secret_inputs {
@@ -592,14 +622,14 @@ fn mining_amount_per_mining_report_in_epoch(epoch: u32) -> Decimal {
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
 #[must_use]
-pub fn mining_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+fn mining_amount_for_mining_report(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     mining_amount_per_mining_report_in_epoch(epoch(mining_report_number))
 }
 
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
-pub fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Decimal {
+fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     (mining_amount_for_mining_report(mining_report_number) * decimal(MINING_SUBSIDY_FRACTION))
         .round_dp(WEBCASH_DECIMALS)
@@ -607,13 +637,13 @@ pub fn mining_subsidy_amount_for_mining_report(mining_report_number: u32) -> Dec
 }
 
 #[must_use]
-pub fn epoch(mining_report_number: u32) -> u32 {
+fn epoch(mining_report_number: u32) -> u32 {
     assert!(mining_report_number >= 1);
     (mining_report_number - 1) / MINING_REPORTS_PER_EPOCH
 }
 
 #[must_use]
-pub fn total_circulation(mining_report_number: u32) -> Decimal {
+fn total_circulation(mining_report_number: u32) -> Decimal {
     assert!(mining_report_number >= 1);
     let mut total_circulation = Decimal::default();
     let mut mining_reports_in_current_epoch = mining_report_number;
