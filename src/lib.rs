@@ -102,8 +102,7 @@ impl std::str::FromStr for Amount {
     #[must_use]
     fn from_str(s: &str) -> Result<Amount, Self::Err> {
         // Remove optional amount prefix
-        let s =
-        if !OPTIONAL_AMOUNT_PREFIX.is_empty() && s.starts_with(OPTIONAL_AMOUNT_PREFIX) {
+        let s = if !OPTIONAL_AMOUNT_PREFIX.is_empty() && s.starts_with(OPTIONAL_AMOUNT_PREFIX) {
             &s[OPTIONAL_AMOUNT_PREFIX.len()..]
         } else {
             s
@@ -122,7 +121,9 @@ impl std::str::FromStr for Amount {
             if parts.len() != 2 {
                 return Err("amount string contains unexpected characters")?;
             }
-            let int_part = parts[0].parse::<u64>()?.checked_mul(10_u64.pow(WEBCASH_DECIMALS));
+            let int_part = parts[0]
+                .parse::<u64>()?
+                .checked_mul(10_u64.pow(WEBCASH_DECIMALS));
             if int_part.is_none() {
                 return Err("overflow")?;
             }
@@ -130,7 +131,9 @@ impl std::str::FromStr for Amount {
             if WEBCASH_DECIMALS < (parts[1].len() as u32) {
                 return Err("too many fractional digits")?;
             }
-            let frac_part = parts[1].parse::<u64>()?.checked_mul(10_u64.pow(WEBCASH_DECIMALS - (parts[1].len() as u32)));
+            let frac_part = parts[1]
+                .parse::<u64>()?
+                .checked_mul(10_u64.pow(WEBCASH_DECIMALS - (parts[1].len() as u32)));
             if frac_part.is_none() {
                 return Err("overflow")?;
             }
@@ -188,7 +191,7 @@ impl std::str::FromStr for WebcashKind {
         match s {
             WEBCASH_KIND_IDENTIFIER_SECRET => Ok(WebcashKind::Secret),
             WEBCASH_KIND_IDENTIFIER_PUBLIC => Ok(WebcashKind::Public),
-            _ => Err("unexpected webcash claim code type")?
+            _ => Err("unexpected webcash claim code type")?,
         }
     }
 }
@@ -202,7 +205,9 @@ pub struct SecretWebcash {
 impl std::fmt::Display for SecretWebcash {
     #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "{}{}:{}:{}",
+        write!(
+            fmt,
+            "{}{}:{}:{}",
             OPTIONAL_AMOUNT_PREFIX,
             self.amount,
             WebcashKind::Secret,
@@ -252,7 +257,9 @@ impl SecretWebcash {
 impl std::fmt::Display for PublicWebcash {
     #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(fmt, "{}{}:{}:{:x}",
+        write!(
+            fmt,
+            "{}{}:{}:{:x}",
             OPTIONAL_AMOUNT_PREFIX,
             self.amount.map_or("0".to_owned(), |n| n.to_string()),
             WebcashKind::Public,
@@ -264,9 +271,9 @@ impl std::fmt::Display for PublicWebcash {
 
 fn is_webcash_hex_string(hex: &str) -> bool {
     hex.len() == HEX_STRING_LENGTH
-        && hex
-            .chars()
-            .all(|ch| ('0'..='9').contains(&ch) || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch))
+        && hex.chars().all(|ch| {
+            ('0'..='9').contains(&ch) || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
+        })
 }
 
 impl std::str::FromStr for PublicWebcash {
@@ -304,8 +311,7 @@ pub trait CheckForDuplicates {
 impl CheckForDuplicates for Vec<SecretWebcash> {
     #[must_use]
     fn contains_duplicates(&self) -> bool {
-        let mut unique_hex_strings: Vec<String> =
-            self.iter().map(|wc| wc.secret.clone()).collect(); // FIXME: can we remove this .clone()?
+        let mut unique_hex_strings: Vec<String> = self.iter().map(|wc| wc.secret.clone()).collect(); // FIXME: can we remove this .clone()?
         unique_hex_strings.sort();
         unique_hex_strings.dedup();
         unique_hex_strings.len() != self.len()
@@ -315,8 +321,7 @@ impl CheckForDuplicates for Vec<SecretWebcash> {
 impl CheckForDuplicates for Vec<PublicWebcash> {
     #[must_use]
     fn contains_duplicates(&self) -> bool {
-        let mut unique_hashes: Vec<H256> =
-            self.iter().map(|wc| wc.hash).collect();
+        let mut unique_hashes: Vec<H256> = self.iter().map(|wc| wc.hash).collect();
         unique_hashes.sort();
         unique_hashes.dedup();
         unique_hashes.len() != self.len()
@@ -385,7 +390,9 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_subsidy_amount(&self) -> Amount {
-        Amount::from(mining_subsidy_amount_for_mining_report(self.get_mining_reports()))
+        Amount::from(mining_subsidy_amount_for_mining_report(
+            self.get_mining_reports(),
+        ))
     }
 
     #[must_use]
@@ -460,8 +467,7 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_using_public_token(&self, public_token: &PublicWebcash) -> Option<&Output> {
-        self.public_hash_to_amount_state
-            .get(&public_token.hash)
+        self.public_hash_to_amount_state.get(&public_token.hash)
     }
 
     #[must_use]
@@ -549,7 +555,8 @@ impl WebcashEconomy {
         for secret_output in secret_outputs {
             self.create_token(secret_output);
         }
-        assert_eq!( // FIXME: Should be checked before?
+        assert_eq!(
+            // FIXME: Should be checked before?
             Some(self.get_total_unspent() - total_unspent_before),
             secret_outputs.total_value()
         );
@@ -610,7 +617,10 @@ impl WebcashEconomy {
         if !self.are_valid_output_tokens_with_non_taken_hashes(secret_outputs) {
             return false;
         }
-        if [secret_inputs.as_slice(), secret_outputs.as_slice()].concat().contains_duplicates() {
+        if [secret_inputs.as_slice(), secret_outputs.as_slice()]
+            .concat()
+            .contains_duplicates()
+        {
             return false;
         }
         if secret_inputs.total_value() != secret_outputs.total_value() {
@@ -651,7 +661,9 @@ fn mining_amount_for_mining_report(num_mining_reports: usize) -> u64 {
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
 fn mining_subsidy_amount_for_mining_report(num_mining_reports: usize) -> u64 {
-    mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports)) * MINING_SUBSIDY_FRAC_NUMERATOR / MINING_SUBSIDY_FRAC_DENOMINATOR
+    mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
+        * MINING_SUBSIDY_FRAC_NUMERATOR
+        / MINING_SUBSIDY_FRAC_DENOMINATOR
 }
 
 #[must_use]
@@ -664,10 +676,13 @@ fn total_circulation(num_mining_reports: usize) -> u128 {
     let mut total_circulation: u128 = 0;
     let mut mining_reports_in_current_epoch = num_mining_reports;
     for past_epoch in 0..epoch(num_mining_reports) {
-        total_circulation += (mining_amount_per_mining_report_in_epoch(past_epoch) * MINING_REPORTS_PER_EPOCH as u64) as u128;
+        total_circulation += (mining_amount_per_mining_report_in_epoch(past_epoch)
+            * MINING_REPORTS_PER_EPOCH as u64) as u128;
         mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
     }
-    total_circulation + (mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports)) * mining_reports_in_current_epoch as u64) as u128
+    total_circulation
+        + (mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
+            * mining_reports_in_current_epoch as u64) as u128
 }
 
 #[cfg(test)]
@@ -677,27 +692,37 @@ mod tests {
     #[test]
     fn test_secret_to_public() {
         assert_eq!(
-            "e1:secret:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824".parse::<SecretWebcash>().unwrap().to_public().to_string(),
+            "e1:secret:2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824"
+                .parse::<SecretWebcash>()
+                .unwrap()
+                .to_public()
+                .to_string(),
             "e1:public:d7914fe546b684688bb95f4f888a92dfc680603a75f23eb823658031fff766d9"
         );
         assert_eq!(
-            "e1:secret:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9".parse::<SecretWebcash>().unwrap().to_public().to_string(),
+            "e1:secret:b94d27b9934d3e08a52e52d7da7dabfac484efe37a5380ee9088f7ace2efcde9"
+                .parse::<SecretWebcash>()
+                .unwrap()
+                .to_public()
+                .to_string(),
             "e1:public:049da052634feb56ce6ec0bc648c672011edff1cb272b53113bbc90a8f00249c"
         );
     }
 
     fn parse_secret_webcash(v: &[String]) -> Vec<SecretWebcash> {
-        v.iter().map(|s| s.parse::<SecretWebcash>())
-                .filter(|r| r.is_ok())
-                .map(|r| r.unwrap())
-                .collect()
+        v.iter()
+            .map(|s| s.parse::<SecretWebcash>())
+            .filter(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect()
     }
 
     fn parse_public_webcash(v: &[String]) -> Vec<PublicWebcash> {
-        v.iter().map(|s| s.parse::<PublicWebcash>())
-                .filter(|r| r.is_ok())
-                .map(|r| r.unwrap())
-                .collect()
+        v.iter()
+            .map(|s| s.parse::<PublicWebcash>())
+            .filter(|r| r.is_ok())
+            .map(|r| r.unwrap())
+            .collect()
     }
 
     #[test]
@@ -735,14 +760,23 @@ mod tests {
             String::from("e1.00000000:secret:12345678901234567890123456789012345678901234567890123456789abcd3"),
             String::from("e1.0000:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
-        assert_eq!(parse_secret_webcash(&valid_secret_tokens_precision).len(), 4);
-        assert_eq!(parse_public_webcash(&valid_secret_tokens_precision).len(), 0);
+        assert_eq!(
+            parse_secret_webcash(&valid_secret_tokens_precision).len(),
+            4
+        );
+        assert_eq!(
+            parse_public_webcash(&valid_secret_tokens_precision).len(),
+            0
+        );
 
         let total_amount_too_large_tokens = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
             String::from("e210000000000:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
         ];
-        assert_eq!(parse_secret_webcash(&total_amount_too_large_tokens).len(), 1);
+        assert_eq!(
+            parse_secret_webcash(&total_amount_too_large_tokens).len(),
+            1
+        );
 
         let invalid_tokens = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
@@ -759,7 +793,10 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
         ];
         assert_eq!(parse_secret_webcash(&duplicate_hex_1).len(), 4);
-        assert_eq!(parse_secret_webcash(&duplicate_hex_1).contains_duplicates(), true);
+        assert_eq!(
+            parse_secret_webcash(&duplicate_hex_1).contains_duplicates(),
+            true
+        );
 
         let duplicate_hex_2 = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
@@ -768,7 +805,10 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert_eq!(parse_secret_webcash(&duplicate_hex_2).len(), 4);
-        assert_eq!(parse_secret_webcash(&duplicate_hex_2).contains_duplicates(), true);
+        assert_eq!(
+            parse_secret_webcash(&duplicate_hex_2).contains_duplicates(),
+            true
+        );
 
         let duplicate_hex_3 = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
@@ -777,7 +817,10 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert_eq!(parse_secret_webcash(&duplicate_hex_3).len(), 4);
-        assert_eq!(parse_secret_webcash(&duplicate_hex_3).contains_duplicates(), true);
+        assert_eq!(
+            parse_secret_webcash(&duplicate_hex_3).contains_duplicates(),
+            true
+        );
     }
 
     fn is_webcash_amount(s: &str) -> bool {
@@ -898,7 +941,10 @@ mod tests {
                 let public = secret.to_public();
                 assert!(!public.amount.is_none());
                 assert_eq!(public.amount.unwrap(), secret.amount);
-                assert_eq!(public.hash, H256::from_slice(&Sha256::digest(&secret.secret)))
+                assert_eq!(
+                    public.hash,
+                    H256::from_slice(&Sha256::digest(&secret.secret))
+                )
             }
             if let Ok(public) = public {
                 assert_eq!(public, public.to_string().parse::<PublicWebcash>().unwrap());
@@ -1082,25 +1128,55 @@ mod tests {
     fn test_mining_amount_for_mining_report() {
         assert_eq!(mining_amount_for_mining_report(1), 200000_00000000);
         assert_eq!(mining_amount_for_mining_report(2), 200000_00000000);
-        assert_eq!(mining_amount_for_mining_report(525_000 - 1), 200000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(525_000 - 1),
+            200000_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(525_000), 100000_00000000);
-        assert_eq!(mining_amount_for_mining_report(2 * 525_000 - 1), 100000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(2 * 525_000 - 1),
+            100000_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(2 * 525_000), 50000_00000000);
-        assert_eq!(mining_amount_for_mining_report(3 * 525_000 - 1), 50000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(3 * 525_000 - 1),
+            50000_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(3 * 525_000), 25000_00000000);
-        assert_eq!(mining_amount_for_mining_report(4 * 525_000 - 1), 25000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(4 * 525_000 - 1),
+            25000_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(4 * 525_000), 12500_00000000);
-        assert_eq!(mining_amount_for_mining_report(5 * 525_000 - 1), 12500_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(5 * 525_000 - 1),
+            12500_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(5 * 525_000), 6250_00000000);
-        assert_eq!(mining_amount_for_mining_report(6 * 525_000 - 1), 6250_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(6 * 525_000 - 1),
+            6250_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(6 * 525_000), 3125_00000000);
-        assert_eq!(mining_amount_for_mining_report(7 * 525_000 - 1), 3125_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(7 * 525_000 - 1),
+            3125_00000000
+        );
         assert_eq!(mining_amount_for_mining_report(7 * 525_000), 1562_50000000);
-        assert_eq!(mining_amount_for_mining_report(8 * 525_000 - 1), 1562_50000000);
+        assert_eq!(
+            mining_amount_for_mining_report(8 * 525_000 - 1),
+            1562_50000000
+        );
         assert_eq!(mining_amount_for_mining_report(8 * 525_000), 781_25000000);
-        assert_eq!(mining_amount_for_mining_report(9 * 525_000 - 1), 781_25000000);
+        assert_eq!(
+            mining_amount_for_mining_report(9 * 525_000 - 1),
+            781_25000000
+        );
         assert_eq!(mining_amount_for_mining_report(9 * 525_000), 390_62500000);
-        assert_eq!(mining_amount_for_mining_report(10 * 525_000 - 1), 390_62500000);
+        assert_eq!(
+            mining_amount_for_mining_report(10 * 525_000 - 1),
+            390_62500000
+        );
         assert_eq!(mining_amount_for_mining_report(10 * 525_000), 195_31250000);
         assert_eq!(mining_amount_for_mining_report(20 * 525_000), 19073486);
         assert_eq!(mining_amount_for_mining_report(30 * 525_000), 18626);
@@ -1119,19 +1195,58 @@ mod tests {
     #[test]
     fn test_mining_subsidy_amount_for_mining_report() {
         assert_eq!(mining_subsidy_amount_for_mining_report(0), 10000_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(1 * 525_000 - 1), 10000_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(1 * 525_000), 5000_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(2 * 525_000 - 1), 5000_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(2 * 525_000), 2500_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(5 * 525_000 - 1), 625_00000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(5 * 525_000), 312_50000000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(8 * 525_000 - 1), 78_12500000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(8 * 525_000), 39_06250000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(10 * 525_000 - 1), 19_53125000);
-        assert_eq!(mining_subsidy_amount_for_mining_report(10 * 525_000), 9_76562500);
-        assert_eq!(mining_subsidy_amount_for_mining_report(20 * 525_000 - 1), 1907348);
-        assert_eq!(mining_subsidy_amount_for_mining_report(20 * 525_000), 953674);
-        assert_eq!(mining_subsidy_amount_for_mining_report(30 * 525_000 - 1), 1862);
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1 * 525_000 - 1),
+            10000_00000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1 * 525_000),
+            5000_00000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(2 * 525_000 - 1),
+            5000_00000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(2 * 525_000),
+            2500_00000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(5 * 525_000 - 1),
+            625_00000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(5 * 525_000),
+            312_50000000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(8 * 525_000 - 1),
+            78_12500000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(8 * 525_000),
+            39_06250000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(10 * 525_000 - 1),
+            19_53125000
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(10 * 525_000),
+            9_76562500
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(20 * 525_000 - 1),
+            1907348
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(20 * 525_000),
+            953674
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(30 * 525_000 - 1),
+            1862
+        );
         assert_eq!(mining_subsidy_amount_for_mining_report(30 * 525_000), 931);
         assert_eq!(mining_subsidy_amount_for_mining_report(39 * 525_000 - 1), 3);
         assert_eq!(mining_subsidy_amount_for_mining_report(39 * 525_000), 1);
@@ -1141,7 +1256,10 @@ mod tests {
         assert_eq!(mining_subsidy_amount_for_mining_report(41 * 525_000), 0);
         assert_eq!(mining_subsidy_amount_for_mining_report(100 * 525_000), 0);
         assert_eq!(mining_subsidy_amount_for_mining_report(1000 * 525_000), 0);
-        assert_eq!(mining_subsidy_amount_for_mining_report(1_069_352), 2500_00000000);
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1_069_352),
+            2500_00000000
+        );
     }
 
     #[test]
@@ -1174,7 +1292,10 @@ mod tests {
             epoch += 1;
         }
         assert_eq!(first_zero_reward_epoch, 45);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(first_zero_reward_epoch), 0);
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(first_zero_reward_epoch),
+            0
+        );
         assert_ne!(
             total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH - 1),
             total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH)
@@ -1194,7 +1315,8 @@ mod tests {
         let mut total_mining_amount: u128 = 0;
         for epoch in 0..=100 {
             let per_mining_report_mining_amount = mining_amount_per_mining_report_in_epoch(epoch);
-            total_mining_amount += (per_mining_report_mining_amount * MINING_REPORTS_PER_EPOCH as u64) as u128;
+            total_mining_amount +=
+                (per_mining_report_mining_amount * MINING_REPORTS_PER_EPOCH as u64) as u128;
         }
         assert_eq!(total_mining_amount, 209999999999_92650000);
         assert_eq!(total_mining_amount, total_circulation(4_294_967_295));

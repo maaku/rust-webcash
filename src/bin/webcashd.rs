@@ -11,7 +11,8 @@ use thousands::Separable;
 extern crate log;
 use serde::{Deserialize, Serialize};
 use webcash::{
-    Amount, CheckForDuplicates, PublicWebcash, SecretWebcash, SumAmounts, WebcashEconomy, WEBCASH_DECIMALS
+    Amount, CheckForDuplicates, PublicWebcash, SecretWebcash, SumAmounts, WebcashEconomy,
+    WEBCASH_DECIMALS,
 };
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
@@ -142,7 +143,10 @@ async fn replace(
         return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
     }
 
-    if [inputs.as_slice(), outputs.as_slice()].concat().contains_duplicates() {
+    if [inputs.as_slice(), outputs.as_slice()]
+        .concat()
+        .contains_duplicates()
+    {
         return json_replace_response(JSON_STATUS_ERROR, "Duplicate webcash.");
     }
 
@@ -197,11 +201,10 @@ async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     web::Json(StatsResponse {
         // NOTE: Emulating Python server here by returning a truncated amount.
         //       Will be inexact in the future.
-        circulation_formatted: (
-                webcash_economy.get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS)
-            ).separate_with_commas(),
-        circulation: webcash_economy
-            .get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS),
+        circulation_formatted: (webcash_economy.get_total_circulation()
+            / 10_u128.pow(WEBCASH_DECIMALS))
+        .separate_with_commas(),
+        circulation: webcash_economy.get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio(),
         mining_amount: webcash_economy.get_mining_amount(),
@@ -473,7 +476,7 @@ async fn health_check(
             JSON_STATUS_ERROR,
             "Requested number of public webcash to check exceeds maximum limit.",
             std::collections::HashMap::default(),
-        )
+        );
     }
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
