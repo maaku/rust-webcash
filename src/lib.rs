@@ -63,7 +63,12 @@ impl std::iter::Sum for Amount {
 
 impl std::convert::From<u64> for Amount {
     fn from(n: u64) -> Self {
-        assert!(1 <= n);
+        // Disabling this check for now, as the server is currently written in
+        // such a way that Amounts are often initialized with zero.  Indedd in
+        // many contexts this makes sense to do (e.g. initializing a sum
+        // accumulator).  We shoudl assess whether implementing this constraint
+        // is worth it.
+        // assert!(1 <= n);
         assert!(n <= MAX_WEBCASH);
         Amount { value: n }
     }
