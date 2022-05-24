@@ -1,11 +1,19 @@
+// Copyright (c) 2022 Webcash Developers
+// This Source Code Form is subject to the terms of the Mozilla Public
+// License, v. 2.0. If a copy of the MPL was not distributed with this
+// file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
 use actix_web::{
     get, http::header::ContentType, post, web, App, HttpResponse, HttpServer, Responder,
 };
 use thousands::Separable;
 #[macro_use]
 extern crate log;
-use rust_decimal::prelude::*;
 use serde::{Deserialize, Serialize};
+use webcash::{
+    Amount, CheckForDuplicates, PublicWebcash, SecretWebcash, SumAmounts, WebcashEconomy,
+    WEBCASH_DECIMALS,
+};
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
@@ -80,8 +88,8 @@ struct LegaleseRequest {
 #[derive(Deserialize)]
 struct ReplaceRequest {
     legalese: LegaleseRequest,
-    webcashes: Vec<String>,
-    new_webcashes: Vec<String>,
+    webcashes: Vec<SecretWebcash>,
+    new_webcashes: Vec<SecretWebcash>,
 }
 
 #[derive(Serialize)]
@@ -115,36 +123,31 @@ async fn replace(
         return json_replace_response(JSON_STATUS_ERROR, "Terms of service not accepted.");
     }
 
-    let inputs = match webcash::parse_webcash_tokens(
-        &replace_request.webcashes,
-        &webcash::WebcashTokenKind::Secret,
-        MAX_REPLACEMENT_INPUT_TOKENS,
-    ) {
-        Ok(inputs) => inputs,
-        Err(_) => return json_replace_response(JSON_STATUS_ERROR, "Invalid input(s)."),
-    };
-    assert_eq!(inputs.len(), replace_request.webcashes.len());
-    assert!(inputs
-        .iter()
-        .all(|wc| wc.token_kind == webcash::WebcashTokenKind::Secret));
+    let inputs = &replace_request.webcashes;
+    if inputs.is_empty() {
+        return json_replace_response(JSON_STATUS_ERROR, "Must specify input webcashes.");
+    }
+    if MAX_REPLACEMENT_INPUT_TOKENS < inputs.len() {
+        return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
+    }
 
-    let outputs = match webcash::parse_webcash_tokens(
-        &replace_request.new_webcashes,
-        &webcash::WebcashTokenKind::Secret,
-        MAX_REPLACEMENT_OUTPUT_TOKENS,
-    ) {
-        Ok(outputs) => outputs,
-        Err(_) => return json_replace_response(JSON_STATUS_ERROR, "Invalid output(s)."),
-    };
-    assert_eq!(outputs.len(), replace_request.new_webcashes.len());
-    assert!(outputs
-        .iter()
-        .all(|wc| wc.token_kind == webcash::WebcashTokenKind::Secret));
+    let outputs = &replace_request.new_webcashes;
+    if outputs.is_empty() {
+        return json_replace_response(JSON_STATUS_ERROR, "Must specify output webcashes.");
+    }
+    if MAX_REPLACEMENT_OUTPUT_TOKENS < outputs.len() {
+        return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
+    }
 
-    let total_input = webcash::sum(&inputs);
-    let total_output = webcash::sum(&outputs);
-    if total_input != total_output {
+    if inputs.total_value() != outputs.total_value() {
         return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
+    }
+
+    if [inputs.as_slice(), outputs.as_slice()]
+        .concat()
+        .contains_duplicates()
+    {
+        return json_replace_response(JSON_STATUS_ERROR, "Duplicate webcash.");
     }
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
@@ -159,9 +162,9 @@ async fn replace(
 struct TargetResponse {
     difficulty_target_bits: u8,
     ratio: f32,
-    mining_amount: String,
-    mining_subsidy_amount: String,
-    epoch: u32,
+    mining_amount: Amount,
+    mining_subsidy_amount: Amount,
+    epoch: usize,
 }
 
 #[get("/api/v1/target")]
@@ -172,8 +175,8 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
     web::Json(TargetResponse {
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio(),
-        mining_amount: webcash_economy.get_mining_amount().to_string(),
-        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        mining_amount: webcash_economy.get_mining_amount(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
         epoch: webcash_economy.get_epoch(),
     })
 }
@@ -181,13 +184,13 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
 #[derive(Serialize)]
 struct StatsResponse {
     circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
-    circulation: u64, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
+    circulation: u128, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
     difficulty_target_bits: u8,
-    ratio: f64,            // TODO/FIX: float here but string (decimal) in target API call.
-    mining_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
-    mining_subsidy_amount: String, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
-    epoch: u32,
-    mining_reports: u32,
+    ratio: f32,            // TODO/FIX: float here but string (decimal) in target API call.
+    mining_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
+    mining_subsidy_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
+    epoch: usize,
+    mining_reports: usize,
 }
 
 #[get("/stats")]
@@ -196,21 +199,16 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        circulation_formatted: webcash_economy
-            .get_total_circulation()
-            .trunc()
-            .to_u64()
-            .unwrap()
-            .separate_with_commas(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
-        circulation: webcash_economy
-            .get_total_circulation()
-            .trunc()
-            .to_u64()
-            .unwrap(), // NOTE: Emulating Python server here by returning a truncated amount. Will be inexact in the future.
+        // NOTE: Emulating Python server here by returning a truncated amount.
+        //       Will be inexact in the future.
+        circulation_formatted: (webcash_economy.get_total_circulation()
+            / 10_u128.pow(WEBCASH_DECIMALS))
+        .separate_with_commas(),
+        circulation: webcash_economy.get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        ratio: webcash_economy.get_ratio().to_f64().unwrap(),
-        mining_amount: webcash_economy.get_mining_amount().to_string(),
-        mining_subsidy_amount: webcash_economy.get_subsidy_amount().to_string(),
+        ratio: webcash_economy.get_ratio(),
+        mining_amount: webcash_economy.get_mining_amount(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
         epoch: webcash_economy.get_epoch(),
         mining_reports: webcash_economy.get_mining_reports(),
     })
@@ -234,8 +232,8 @@ struct MiningReportResponse {
 
 #[derive(Deserialize)]
 struct PreimageRequest {
-    webcash: Vec<String>,
-    subsidy: Vec<String>,
+    webcash: Vec<SecretWebcash>,
+    subsidy: Vec<SecretWebcash>,
     #[serde(rename = "nonce")]
     _nonce: u64,
     timestamp: serde_json::Number,
@@ -243,8 +241,8 @@ struct PreimageRequest {
     legalese: LegaleseRequest,
 }
 
-const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
+const MAX_MINING_OUTPUT_SUBSIDY_TOKENS: usize = 100;
 
 #[cfg(not(tarpaulin_include))]
 #[must_use]
@@ -351,22 +349,31 @@ async fn mining_report(
     }
 
     // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
-    let webcash_tokens = match webcash::parse_webcash_tokens(
-        &preimage.webcash,
-        &webcash::WebcashTokenKind::Secret,
-        MAX_MINING_OUTPUT_TOKENS,
-    ) {
-        Ok(webcash_tokens) => webcash_tokens,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not parse webcash tokens.",
-                difficulty_target_bits,
-            );
-        }
-    };
+    let webcash_tokens = preimage.webcash;
+    if webcash_tokens.contains_duplicates() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Duplicate webcash in mining report.",
+            difficulty_target_bits,
+        );
+    }
+    if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Number of webcash in mining report exceeds maximum limit.",
+            difficulty_target_bits,
+        );
+    }
 
-    let mining_amount = webcash::sum(&webcash_tokens);
+    let mining_amount = webcash_tokens.total_value();
+    if mining_amount.is_none() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Missing webcash in mining report.",
+            difficulty_target_bits,
+        );
+    }
+    let mining_amount = mining_amount.unwrap();
     if mining_amount != webcash_economy.get_mining_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -376,22 +383,31 @@ async fn mining_report(
     }
 
     // TODO: Claim and store server operator's tokens.
-    let subsidy_tokens = match webcash::parse_webcash_tokens(
-        &preimage.subsidy,
-        &webcash::WebcashTokenKind::Secret,
-        MAX_MINING_OUTPUT_SUBSIDY_TOKENS,
-    ) {
-        Ok(webcash_tokens) => webcash_tokens,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not parse subsidy tokens.",
-                difficulty_target_bits,
-            );
-        }
-    };
+    let subsidy_tokens = preimage.subsidy;
+    if subsidy_tokens.contains_duplicates() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Duplicate webcash in mining report.",
+            difficulty_target_bits,
+        );
+    }
+    if MAX_MINING_OUTPUT_SUBSIDY_TOKENS < subsidy_tokens.len() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Number of subsidy webcash in mining report exceeds maximum limit.",
+            difficulty_target_bits,
+        );
+    }
 
-    let subsidy_amount = webcash::sum(&subsidy_tokens);
+    let subsidy_amount = subsidy_tokens.total_value();
+    if subsidy_amount.is_none() {
+        return json_mining_report_response(
+            JSON_STATUS_ERROR,
+            "Missing subsidy in mining report.",
+            difficulty_target_bits,
+        );
+    }
+    let subsidy_amount = subsidy_amount.unwrap();
     if subsidy_amount != webcash_economy.get_subsidy_amount() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -420,7 +436,7 @@ async fn mining_report(
 #[derive(Serialize)]
 struct HealthCheckSpentResponse {
     spent: Option<bool>,
-    amount: Option<String>,
+    amount: Option<Amount>,
 }
 
 #[derive(Serialize)]
@@ -453,34 +469,24 @@ const MAX_HEALTH_CHECK_TOKENS: usize = 100;
 #[allow(clippy::unused_async)]
 async fn health_check(
     data: web::Data<WebcashApplicationState>,
-    health_check_request: web::Json<Vec<String>>,
+    health_check_request: web::Json<Vec<PublicWebcash>>,
 ) -> impl actix_web::Responder {
-    let webcash_tokens = match webcash::parse_webcash_tokens(
-        &health_check_request,
-        &webcash::WebcashTokenKind::Public,
-        MAX_HEALTH_CHECK_TOKENS,
-    ) {
-        Ok(webcash_tokens) => webcash_tokens,
-        Err(_) => {
-            return json_health_check_response(
-                JSON_STATUS_ERROR,
-                "Invalid token(s).",
-                std::collections::HashMap::<String, HealthCheckSpentResponse>::default(),
-            )
-        }
-    };
-    assert!(!webcash_tokens.is_empty());
-    assert!(webcash_tokens.len() == health_check_request.len());
-
+    if MAX_HEALTH_CHECK_TOKENS < health_check_request.len() {
+        return json_health_check_response(
+            JSON_STATUS_ERROR,
+            "Requested number of public webcash to check exceeds maximum limit.",
+            std::collections::HashMap::default(),
+        );
+    }
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
     // TODO: Move this to separate method in WebcashEconomy. Remove public access for get_using_public_token.
-    for public_webcash_token in &webcash_tokens {
+    for public_webcash_token in health_check_request.iter() {
         let mut spent: Option<bool> = None;
-        let mut amount: Option<String> = None;
+        let mut amount: Option<Amount> = None;
         if let Some(amount_state) = webcash_economy.get_using_public_token(public_webcash_token) {
             spent = Some(amount_state.spent);
-            amount = Some(amount_state.amount.to_string());
+            amount = Some(amount_state.amount);
         }
         results.insert(
             public_webcash_token.to_string(),
@@ -493,7 +499,7 @@ async fn health_check(
 }
 
 struct WebcashApplicationState {
-    webcash_economy: std::sync::Mutex<webcash::WebcashEconomy>,
+    webcash_economy: std::sync::Mutex<WebcashEconomy>,
 }
 
 #[actix_web::main]
@@ -508,7 +514,7 @@ async fn main() -> std::io::Result<()> {
     info!("Starting server instance at http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
 
     let persist_to_disk = true;
-    let webcash_economy = webcash::WebcashEconomy::new(persist_to_disk);
+    let webcash_economy = WebcashEconomy::new(persist_to_disk);
     info!(
         "The economy contains {} unspent webcash (in {} tokens) at startup.",
         webcash_economy.get_total_unspent().separate_with_commas(),
