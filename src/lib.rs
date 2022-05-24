@@ -33,6 +33,7 @@ const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
 const WEBCASH_ECONOMY_JSON_FILE: &str = "webcashd.json";
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
 pub struct Amount {
     pub value: u64,
 }
