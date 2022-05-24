@@ -97,7 +97,7 @@ impl std::fmt::Display for Amount {
                     break;
                 }
             }
-            // Combine inteer and fractional parts
+            // Combine integer and fractional parts
             write!(fmt, "{}.{}", divmod.0, frac)
         }
     }
