@@ -7,7 +7,8 @@ use thousands::Separable;
 #[macro_use]
 extern crate log;
 use primitive_types::H256;
-use serde::{Deserialize, Serialize};
+use serde::de::Error;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 const OPTIONAL_AMOUNT_PREFIX: &str = "e";
@@ -32,10 +33,27 @@ const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
 
 const WEBCASH_ECONOMY_JSON_FILE: &str = "webcashd.json";
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, PartialOrd, Serialize)]
-#[serde(transparent)]
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Amount {
     pub value: u64,
+}
+
+impl Serialize for Amount {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for Amount {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        std::str::FromStr::from_str(&String::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
 }
 
 impl std::ops::Add for Amount {
@@ -202,10 +220,28 @@ impl std::str::FromStr for WebcashKind {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct SecretWebcash {
     pub secret: String,
     pub amount: Amount,
+}
+
+impl Serialize for SecretWebcash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for SecretWebcash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        std::str::FromStr::from_str(&String::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
 }
 
 impl std::fmt::Display for SecretWebcash {
@@ -244,10 +280,28 @@ impl std::str::FromStr for SecretWebcash {
     }
 }
 
-#[derive(Debug, Deserialize, PartialEq)]
+#[derive(PartialEq, Debug)]
 pub struct PublicWebcash {
     pub hash: H256,
     pub amount: Option<Amount>,
+}
+
+impl Serialize for PublicWebcash {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.collect_str(self)
+    }
+}
+
+impl<'de> Deserialize<'de> for PublicWebcash {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        std::str::FromStr::from_str(&String::deserialize(deserializer)?).map_err(D::Error::custom)
+    }
 }
 
 impl SecretWebcash {
@@ -934,7 +988,6 @@ mod tests {
             "e1:public:12345678901234567890123456789012345678901234567890123456789abcde",
             "e1:secret:12345678901234567890123456789012345678901234567890123456789abcde",
             "e92233720368.54775807:public:12345678901234567890123456789012345678901234567890123456789abcde",
-               
             "e92233720368.54775807:secret:12345678901234567890123456789012345678901234567890123456789abcde"
         ];
         for token_string in tokens {
