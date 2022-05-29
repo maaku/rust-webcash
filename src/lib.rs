@@ -18,8 +18,7 @@ const HEX_STRING_LENGTH: usize = 64;
 // amounts as no user transaction will ever have to exceed the implied limit of
 // 2^64 webcash per output.  But this does mean that calculations of the total
 // issuance need to use u128 instead of webcash amounts.
-pub const MAX_WEBCASH: u64 = 92_233_720_368__5477_5807; // 2^64 - 1
-pub const TOTAL_ISSUANCE: u128 = 209_999_999_999__9265_0000;
+const MAX_WEBCASH: u64 = 92_233_720_368__5477_5807; // 2^64 - 1
 pub const WEBCASH_DECIMALS: u32 = 8;
 
 const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
@@ -35,7 +34,7 @@ const WEBCASH_ECONOMY_JSON_FILE: &str = "webcashd.json";
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Amount {
-    pub value: u64,
+    value: u64,
 }
 
 impl Serialize for Amount {
@@ -191,7 +190,7 @@ impl std::str::FromStr for Amount {
 }
 
 #[derive(PartialEq)]
-pub enum WebcashKind {
+enum WebcashKind {
     Secret,
     Public,
 }
@@ -218,8 +217,8 @@ impl std::str::FromStr for WebcashKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SecretWebcash {
-    pub secret: String,
-    pub amount: Amount,
+    secret: String,
+    amount: Amount,
 }
 
 impl Serialize for SecretWebcash {
@@ -276,8 +275,8 @@ impl std::str::FromStr for SecretWebcash {
 
 #[derive(PartialEq, Debug)]
 pub struct PublicWebcash {
-    pub hash: H256,
-    pub amount: Option<Amount>,
+    hash: H256,
+    amount: Option<Amount>,
 }
 
 impl Serialize for PublicWebcash {
@@ -356,7 +355,7 @@ impl std::str::FromStr for PublicWebcash {
     }
 }
 
-pub trait CheckForDuplicates {
+trait CheckForDuplicates {
     fn contains_duplicates(&self) -> bool;
 }
 
@@ -380,7 +379,7 @@ impl CheckForDuplicates for [PublicWebcash] {
     }
 }
 
-pub trait SumAmounts {
+trait SumAmounts {
     fn total_value(&self) -> Option<Amount>;
 }
 
@@ -476,7 +475,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn is_valid_proof_of_work(&self, preimage: &str, preimage_timestamp: i64) -> bool {
+    fn is_valid_proof_of_work(&self, preimage: &str, preimage_timestamp: i64) -> bool {
         let timestamp_diff = (chrono::Utc::now().timestamp() - preimage_timestamp).unsigned_abs();
         if timestamp_diff > MINING_SOLUTION_MAX_AGE_IN_SECONDS {
             return false;
@@ -798,6 +797,8 @@ fn total_circulation(num_mining_reports: usize) -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const TOTAL_ISSUANCE: u128 = 209_999_999_999__9265_0000;
 
     #[test]
     fn test_secret_to_public() {

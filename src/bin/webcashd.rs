@@ -10,10 +10,7 @@ use thousands::Separable;
 #[macro_use]
 extern crate log;
 use serde::{Deserialize, Serialize};
-use webcash::{
-    Amount, CheckForDuplicates, PublicWebcash, SecretWebcash, SumAmounts, WebcashEconomy,
-    WEBCASH_DECIMALS,
-};
+use webcash::{Amount, PublicWebcash, SecretWebcash, WebcashEconomy, WEBCASH_DECIMALS};
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
@@ -138,17 +135,6 @@ async fn replace(
     }
     if MAX_REPLACEMENT_OUTPUT_TOKENS < outputs.len() {
         return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
-    }
-
-    if inputs.total_value() != outputs.total_value() {
-        return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
-    }
-
-    if [inputs.as_slice(), outputs.as_slice()]
-        .concat()
-        .contains_duplicates()
-    {
-        return json_replace_response(JSON_STATUS_ERROR, "Duplicate webcash.");
     }
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
