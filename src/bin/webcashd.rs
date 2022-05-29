@@ -20,6 +20,7 @@ const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const SERVER_BIND_PORT: u16 = 8000;
 
+// TODO: Return status_code != 200 when JSON_STATUS_ERROR
 const JSON_STATUS_ERROR: &str = "error";
 const JSON_STATUS_SUCCESS: &str = "success";
 
@@ -234,11 +235,13 @@ struct MiningReportResponse {
 struct PreimageRequest {
     webcash: Vec<SecretWebcash>,
     subsidy: Vec<SecretWebcash>,
+    timestamp: serde_json::Number,
     #[serde(rename = "nonce")]
     _nonce: u64,
-    timestamp: serde_json::Number,
-    difficulty: u32,
-    legalese: LegaleseRequest,
+    #[serde(rename = "difficulty")]
+    _difficulty: u32,
+    #[serde(rename = "legalese")]
+    _legalese: LegaleseRequest,
 }
 
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
@@ -309,24 +312,6 @@ async fn mining_report(
         }
     };
 
-    // TODO: Relevant to check? We've already checked the legalese once in this request above.
-    if !preimage.legalese.terms {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Terms of service not accepted in preimage JSON.",
-            difficulty_target_bits,
-        );
-    }
-
-    // TODO: Relevant to check? The target difficulty is not relevant as long as the achieved difficulty is sufficient?
-    if preimage.difficulty != u32::from(difficulty_target_bits) {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Invalid difficulty in preimage JSON.",
-            difficulty_target_bits,
-        );
-    }
-
     let preimage_timestamp = match preimage.timestamp.as_f64() {
         Some(preimage_timestamp) => preimage_timestamp,
         None => {
@@ -339,24 +324,8 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
-    if !webcash_economy.is_valid_proof_of_work(&mining_report_request.preimage, preimage_timestamp)
-    {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Invalid proof of work.",
-            difficulty_target_bits,
-        );
-    }
-
     // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
     let webcash_tokens = preimage.webcash;
-    if webcash_tokens.contains_duplicates() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Duplicate webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
     if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -365,32 +334,8 @@ async fn mining_report(
         );
     }
 
-    let mining_amount = webcash_tokens.total_value();
-    if mining_amount.is_none() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Missing webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
-    let mining_amount = mining_amount.unwrap();
-    if mining_amount != webcash_economy.get_mining_amount() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Unexpected mining amount.",
-            difficulty_target_bits,
-        );
-    }
-
     // TODO: Claim and store server operator's tokens.
     let subsidy_tokens = preimage.subsidy;
-    if subsidy_tokens.contains_duplicates() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Duplicate webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
     if MAX_MINING_OUTPUT_SUBSIDY_TOKENS < subsidy_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -399,30 +344,12 @@ async fn mining_report(
         );
     }
 
-    let subsidy_amount = subsidy_tokens.total_value();
-    if subsidy_amount.is_none() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Missing subsidy in mining report.",
-            difficulty_target_bits,
-        );
-    }
-    let subsidy_amount = subsidy_amount.unwrap();
-    if subsidy_amount != webcash_economy.get_subsidy_amount() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Unexpected subsidy amount.",
-            difficulty_target_bits,
-        );
-    }
-
-    assert_eq!(mining_amount, webcash_economy.get_mining_amount());
-    assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
-    assert!(subsidy_amount <= mining_amount);
-    assert_eq!(preimage.difficulty, u32::from(difficulty_target_bits));
-
-    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc. Add all checks above. Remove public access to create_tokens.
-    let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
+    let mining_successful = webcash_economy.mine_tokens(
+        &mining_report_request.preimage,
+        preimage_timestamp,
+        &webcash_tokens,
+        &subsidy_tokens,
+    );
     if !mining_successful {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -430,12 +357,14 @@ async fn mining_report(
             difficulty_target_bits,
         );
     }
+
     json_mining_report_response(JSON_STATUS_SUCCESS, "", difficulty_target_bits)
 }
 
 #[derive(Serialize)]
 struct HealthCheckSpentResponse {
     spent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     amount: Option<Amount>,
 }
 

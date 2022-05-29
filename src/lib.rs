@@ -360,7 +360,7 @@ pub trait CheckForDuplicates {
     fn contains_duplicates(&self) -> bool;
 }
 
-impl CheckForDuplicates for Vec<SecretWebcash> {
+impl CheckForDuplicates for [SecretWebcash] {
     #[must_use]
     fn contains_duplicates(&self) -> bool {
         let mut unique_hex_strings: Vec<String> = self.iter().map(|wc| wc.secret.clone()).collect(); // FIXME: can we remove this .clone()?
@@ -370,7 +370,7 @@ impl CheckForDuplicates for Vec<SecretWebcash> {
     }
 }
 
-impl CheckForDuplicates for Vec<PublicWebcash> {
+impl CheckForDuplicates for [PublicWebcash] {
     #[must_use]
     fn contains_duplicates(&self) -> bool {
         let mut unique_hashes: Vec<H256> = self.iter().map(|wc| wc.hash).collect();
@@ -384,7 +384,7 @@ pub trait SumAmounts {
     fn total_value(&self) -> Option<Amount>;
 }
 
-impl SumAmounts for Vec<SecretWebcash> {
+impl SumAmounts for [SecretWebcash] {
     #[must_use]
     fn total_value(&self) -> Option<Amount> {
         if self.is_empty() {
@@ -395,7 +395,7 @@ impl SumAmounts for Vec<SecretWebcash> {
     }
 }
 
-impl SumAmounts for Vec<PublicWebcash> {
+impl SumAmounts for [PublicWebcash] {
     #[must_use]
     fn total_value(&self) -> Option<Amount> {
         self.iter().map(|wc| wc.amount).sum()
@@ -544,6 +544,12 @@ impl WebcashEconomy {
 
     #[must_use]
     fn are_unspent_valid_input_tokens(&self, secret_input_tokens: &[SecretWebcash]) -> bool {
+        if secret_input_tokens.is_empty() {
+            return false;
+        }
+        if secret_input_tokens.contains_duplicates() {
+            return false;
+        }
         if !secret_input_tokens
             .iter()
             .all(|wc| self.is_unspent_secret_token_with_correct_amount(wc))
@@ -563,6 +569,12 @@ impl WebcashEconomy {
         &self,
         secret_output_tokens: &[SecretWebcash],
     ) -> bool {
+        if secret_output_tokens.is_empty() {
+            return false;
+        }
+        if secret_output_tokens.contains_duplicates() {
+            return false;
+        }
         if !secret_output_tokens
             .iter()
             .all(|wc| self.is_valid_output_token_with_non_taken_hash(wc))
@@ -599,7 +611,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn create_tokens(&mut self, secret_outputs: &Vec<SecretWebcash>) -> bool {
+    fn create_tokens(&mut self, secret_outputs: &Vec<SecretWebcash>) -> bool {
         let total_unspent_before = self.get_total_unspent();
         if !self.are_valid_output_tokens_with_non_taken_hashes(secret_outputs) {
             return false;
@@ -692,6 +704,49 @@ impl WebcashEconomy {
         }
         // self.print_token_summary() called in create_tokens above.
         true
+    }
+
+    #[must_use]
+    pub fn mine_tokens(
+        &mut self,
+        preimage_string: &str,
+        preimage_timestamp: i64,
+        webcash_tokens: &Vec<SecretWebcash>,
+        subsidy_tokens: &Vec<SecretWebcash>,
+    ) -> bool {
+        if !self.is_valid_proof_of_work(preimage_string, preimage_timestamp) {
+            return false;
+        }
+        if !self.are_valid_output_tokens_with_non_taken_hashes(webcash_tokens) {
+            return false;
+        }
+        if !self.are_valid_output_tokens_with_non_taken_hashes(subsidy_tokens) {
+            return false;
+        }
+        for subsidy_token in subsidy_tokens {
+            if !webcash_tokens.contains(subsidy_token) {
+                return false;
+            }
+        }
+        let mining_amount = webcash_tokens.total_value();
+        if mining_amount.is_none() {
+            return false;
+        }
+        let mining_amount = mining_amount.unwrap();
+        if mining_amount != self.get_mining_amount() {
+            return false;
+        }
+        let subsidy_amount = subsidy_tokens.total_value();
+        if subsidy_amount.is_none() {
+            return false;
+        }
+        let subsidy_amount = subsidy_amount.unwrap();
+        if subsidy_amount != self.get_subsidy_amount() {
+            return false;
+        }
+
+        self.create_tokens(webcash_tokens)
+        // TODO: Claim server operator's subsidy tokens via replacement.
     }
 }
 
