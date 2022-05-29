@@ -151,7 +151,7 @@ async fn replace(
     }
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
-    let replacement_successful = webcash_economy.replace_tokens(&inputs, &outputs);
+    let replacement_successful = webcash_economy.replace_tokens(inputs, outputs);
     if !replacement_successful {
         return json_replace_response(JSON_STATUS_ERROR, "Replacement failed.");
     }
