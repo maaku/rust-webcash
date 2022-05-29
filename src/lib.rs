@@ -518,22 +518,22 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_using_public_token(&self, public_token: &PublicWebcash) -> Option<&Output> {
-        self.public_hash_to_amount_state.get(&public_token.hash)
+    pub fn get_using_public_token(&self, token: &PublicWebcash) -> Option<&Output> {
+        self.public_hash_to_amount_state.get(&token.hash)
     }
 
     #[must_use]
-    fn get_using_secret_token(&self, secret_token: &SecretWebcash) -> Option<&Output> {
-        self.get_using_public_token(&secret_token.to_public())
+    fn get_using_secret_token(&self, token: &SecretWebcash) -> Option<&Output> {
+        self.get_using_public_token(&token.to_public())
     }
 
     #[must_use]
-    fn is_unspent_secret_token_with_correct_amount(&self, secret_token: &SecretWebcash) -> bool {
-        let amount_state = match self.get_using_secret_token(secret_token) {
+    fn is_unspent_secret_token_with_correct_amount(&self, token: &SecretWebcash) -> bool {
+        let amount_state = match self.get_using_secret_token(token) {
             Some(amount_state) => amount_state,
             None => return false,
         };
-        if amount_state.amount != secret_token.amount {
+        if amount_state.amount != token.amount {
             return false;
         }
         if amount_state.spent {
@@ -543,14 +543,14 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    fn are_unspent_valid_input_tokens(&self, secret_input_tokens: &[SecretWebcash]) -> bool {
-        if secret_input_tokens.is_empty() {
+    fn are_unspent_valid_input_tokens(&self, input_tokens: &[SecretWebcash]) -> bool {
+        if input_tokens.is_empty() {
             return false;
         }
-        if secret_input_tokens.contains_duplicates() {
+        if input_tokens.contains_duplicates() {
             return false;
         }
-        if !secret_input_tokens
+        if !input_tokens
             .iter()
             .all(|wc| self.is_unspent_secret_token_with_correct_amount(wc))
         {
@@ -560,22 +560,22 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    fn is_valid_output_token_with_non_taken_hash(&self, secret_token: &SecretWebcash) -> bool {
-        self.get_using_secret_token(secret_token).is_none()
+    fn is_valid_output_token_with_non_taken_hash(&self, token: &SecretWebcash) -> bool {
+        self.get_using_secret_token(token).is_none()
     }
 
     #[must_use]
     fn are_valid_output_tokens_with_non_taken_hashes(
         &self,
-        secret_output_tokens: &[SecretWebcash],
+        output_tokens: &[SecretWebcash],
     ) -> bool {
-        if secret_output_tokens.is_empty() {
+        if output_tokens.is_empty() {
             return false;
         }
-        if secret_output_tokens.contains_duplicates() {
+        if output_tokens.contains_duplicates() {
             return false;
         }
-        if !secret_output_tokens
+        if !output_tokens
             .iter()
             .all(|wc| self.is_valid_output_token_with_non_taken_hash(wc))
         {
@@ -595,34 +595,34 @@ impl WebcashEconomy {
         );
     }
 
-    fn create_token(&mut self, secret_webcash_token: &SecretWebcash) {
+    fn create_token(&mut self, webcash_token: &SecretWebcash) {
         let old_value = self.public_hash_to_amount_state.insert(
-            secret_webcash_token.to_public().hash,
+            webcash_token.to_public().hash,
             Output {
-                amount: secret_webcash_token.amount,
+                amount: webcash_token.amount,
                 spent: false,
             },
         );
         assert!(old_value.is_none()); // FIXME: should check before insertion?
         debug!(
             "[diff: +] Token of amount {} created",
-            secret_webcash_token.amount.separate_with_commas()
+            webcash_token.amount.separate_with_commas()
         );
     }
 
     #[must_use]
-    fn create_tokens(&mut self, secret_outputs: &Vec<SecretWebcash>) -> bool {
+    fn create_tokens(&mut self, outputs: &Vec<SecretWebcash>) -> bool {
         let total_unspent_before = self.get_total_unspent();
-        if !self.are_valid_output_tokens_with_non_taken_hashes(secret_outputs) {
+        if !self.are_valid_output_tokens_with_non_taken_hashes(outputs) {
             return false;
         }
-        for secret_output in secret_outputs {
-            self.create_token(secret_output);
+        for output in outputs {
+            self.create_token(output);
         }
         assert_eq!(
             // FIXME: Should be checked before?
             Some(self.get_total_unspent() - total_unspent_before),
-            secret_outputs.total_value()
+            outputs.total_value()
         );
         if self.persist_to_disk {
             self.sync_to_disk();
@@ -653,13 +653,13 @@ impl WebcashEconomy {
         trace!("Sync to disk took {} ms.", now.elapsed().as_millis());
     }
 
-    fn mark_as_spent(&mut self, secret_webcash_token: &SecretWebcash) {
-        assert!(self.is_unspent_secret_token_with_correct_amount(secret_webcash_token));
+    fn mark_as_spent(&mut self, webcash_token: &SecretWebcash) {
+        assert!(self.is_unspent_secret_token_with_correct_amount(webcash_token));
         let amount_state: &mut Output = self
             .public_hash_to_amount_state
-            .get_mut(&secret_webcash_token.to_public().hash)
+            .get_mut(&webcash_token.to_public().hash)
             .unwrap();
-        assert_eq!(amount_state.amount, secret_webcash_token.amount);
+        assert_eq!(amount_state.amount, webcash_token.amount);
         assert!(!amount_state.spent);
         amount_state.spent = true;
         debug!(
@@ -671,29 +671,29 @@ impl WebcashEconomy {
     #[must_use]
     pub fn replace_tokens(
         &mut self,
-        secret_inputs: &Vec<SecretWebcash>,
-        secret_outputs: &Vec<SecretWebcash>,
+        inputs: &Vec<SecretWebcash>,
+        outputs: &Vec<SecretWebcash>,
     ) -> bool {
         let total_unspent_before = self.get_total_unspent();
-        if !self.are_unspent_valid_input_tokens(secret_inputs) {
+        if !self.are_unspent_valid_input_tokens(inputs) {
             return false;
         }
-        if !self.are_valid_output_tokens_with_non_taken_hashes(secret_outputs) {
+        if !self.are_valid_output_tokens_with_non_taken_hashes(outputs) {
             return false;
         }
-        if [secret_inputs.as_slice(), secret_outputs.as_slice()]
+        if [inputs.as_slice(), outputs.as_slice()]
             .concat()
             .contains_duplicates()
         {
             return false;
         }
-        if secret_inputs.total_value() != secret_outputs.total_value() {
+        if inputs.total_value() != outputs.total_value() {
             return false;
         }
-        for secret_input in secret_inputs {
-            self.mark_as_spent(secret_input);
+        for input in inputs {
+            self.mark_as_spent(input);
         }
-        let replacement_tokens_created = self.create_tokens(secret_outputs);
+        let replacement_tokens_created = self.create_tokens(outputs);
         assert!(
             replacement_tokens_created,
             "Replacement tokens could not be created. This should never happen."
