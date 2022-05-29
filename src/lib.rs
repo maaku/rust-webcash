@@ -93,7 +93,6 @@ impl std::convert::From<u64> for Amount {
 }
 
 impl std::fmt::Display for Amount {
-    #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         let divmod = (
             self.value / 10_u64.pow(WEBCASH_DECIMALS),
@@ -123,7 +122,6 @@ impl std::fmt::Display for Amount {
 
 impl std::str::FromStr for Amount {
     type Err = Box<dyn std::error::Error>;
-    #[must_use]
     fn from_str(s: &str) -> Result<Amount, Self::Err> {
         // Remove optional amount prefix
         let s = if !OPTIONAL_AMOUNT_PREFIX.is_empty() && s.starts_with(OPTIONAL_AMOUNT_PREFIX) {
@@ -199,7 +197,6 @@ pub enum WebcashKind {
 }
 
 impl std::fmt::Display for WebcashKind {
-    #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             WebcashKind::Secret => write!(fmt, "{}", WEBCASH_KIND_IDENTIFIER_SECRET),
@@ -210,7 +207,6 @@ impl std::fmt::Display for WebcashKind {
 
 impl std::str::FromStr for WebcashKind {
     type Err = Box<dyn std::error::Error>;
-    #[must_use]
     fn from_str(s: &str) -> Result<WebcashKind, Self::Err> {
         match s {
             WEBCASH_KIND_IDENTIFIER_SECRET => Ok(WebcashKind::Secret),
@@ -245,7 +241,6 @@ impl<'de> Deserialize<'de> for SecretWebcash {
 }
 
 impl std::fmt::Display for SecretWebcash {
-    #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             fmt,
@@ -261,10 +256,9 @@ impl std::fmt::Display for SecretWebcash {
 
 impl std::str::FromStr for SecretWebcash {
     type Err = Box<dyn std::error::Error>;
-    #[must_use]
     fn from_str(s: &str) -> Result<SecretWebcash, Self::Err> {
         // Split the input into amount, kind, secret
-        let parts: Vec<&str> = s.split(":").collect();
+        let parts: Vec<&str> = s.split(':').collect();
         if parts.len() < 3 {
             return Err("insufficient number of segments in webcash code")?;
         }
@@ -315,7 +309,6 @@ impl SecretWebcash {
 }
 
 impl std::fmt::Display for PublicWebcash {
-    #[must_use]
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(
             fmt,
@@ -338,10 +331,9 @@ fn is_webcash_hex_string(hex: &str) -> bool {
 
 impl std::str::FromStr for PublicWebcash {
     type Err = Box<dyn std::error::Error>;
-    #[must_use]
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         // Split the input into amount, kind, hash
-        let parts: Vec<&str> = s.split(":").collect();
+        let parts: Vec<&str> = s.split(':').collect();
         if parts.len() != 3 {
             return Err("unexpected number of segments in webcash code")?;
         }
@@ -551,7 +543,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    fn are_unspent_valid_input_tokens(&self, secret_input_tokens: &Vec<SecretWebcash>) -> bool {
+    fn are_unspent_valid_input_tokens(&self, secret_input_tokens: &[SecretWebcash]) -> bool {
         if !secret_input_tokens
             .iter()
             .all(|wc| self.is_unspent_secret_token_with_correct_amount(wc))
@@ -569,7 +561,7 @@ impl WebcashEconomy {
     #[must_use]
     fn are_valid_output_tokens_with_non_taken_hashes(
         &self,
-        secret_output_tokens: &Vec<SecretWebcash>,
+        secret_output_tokens: &[SecretWebcash],
     ) -> bool {
         if !secret_output_tokens
             .iter()
@@ -736,13 +728,16 @@ fn total_circulation(num_mining_reports: usize) -> u128 {
     let mut total_circulation: u128 = 0;
     let mut mining_reports_in_current_epoch = num_mining_reports;
     for past_epoch in 0..epoch(num_mining_reports) {
-        total_circulation += (mining_amount_per_mining_report_in_epoch(past_epoch)
-            * MINING_REPORTS_PER_EPOCH as u64) as u128;
+        total_circulation += u128::from(
+            mining_amount_per_mining_report_in_epoch(past_epoch) * MINING_REPORTS_PER_EPOCH as u64,
+        );
         mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
     }
     total_circulation
-        + (mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
-            * mining_reports_in_current_epoch as u64) as u128
+        + u128::from(
+            mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
+                * mining_reports_in_current_epoch as u64,
+        )
 }
 
 #[cfg(test)]
@@ -772,16 +767,16 @@ mod tests {
     fn parse_secret_webcash(v: &[String]) -> Vec<SecretWebcash> {
         v.iter()
             .map(|s| s.parse::<SecretWebcash>())
-            .filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
+            .filter(std::result::Result::is_ok)
+            .map(std::result::Result::unwrap)
             .collect()
     }
 
     fn parse_public_webcash(v: &[String]) -> Vec<PublicWebcash> {
         v.iter()
             .map(|s| s.parse::<PublicWebcash>())
-            .filter(|r| r.is_ok())
-            .map(|r| r.unwrap())
+            .filter(std::result::Result::is_ok)
+            .map(std::result::Result::unwrap)
             .collect()
     }
 
@@ -853,10 +848,7 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
         ];
         assert_eq!(parse_secret_webcash(&duplicate_hex_1).len(), 4);
-        assert_eq!(
-            parse_secret_webcash(&duplicate_hex_1).contains_duplicates(),
-            true
-        );
+        assert!(parse_secret_webcash(&duplicate_hex_1).contains_duplicates());
 
         let duplicate_hex_2 = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
@@ -877,10 +869,7 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
         ];
         assert_eq!(parse_secret_webcash(&duplicate_hex_3).len(), 4);
-        assert_eq!(
-            parse_secret_webcash(&duplicate_hex_3).contains_duplicates(),
-            true
-        );
+        assert!(parse_secret_webcash(&duplicate_hex_3).contains_duplicates());
     }
 
     fn is_webcash_amount(s: &str) -> bool {
@@ -998,12 +987,12 @@ mod tests {
                 assert_eq!(secret, secret.to_string().parse::<SecretWebcash>().unwrap());
                 assert_eq!(secret.to_string(), format!("{}", &secret));
                 let public = secret.to_public();
-                assert!(!public.amount.is_none());
+                assert!(public.amount.is_some());
                 assert_eq!(public.amount.unwrap(), secret.amount);
                 assert_eq!(
                     public.hash,
                     H256::from_slice(&Sha256::digest(&secret.secret))
-                )
+                );
             }
             if let Ok(public) = public {
                 assert_eq!(public, public.to_string().parse::<PublicWebcash>().unwrap());
@@ -1375,7 +1364,7 @@ mod tests {
         for epoch in 0..=100 {
             let per_mining_report_mining_amount = mining_amount_per_mining_report_in_epoch(epoch);
             total_mining_amount +=
-                (per_mining_report_mining_amount * MINING_REPORTS_PER_EPOCH as u64) as u128;
+                u128::from(per_mining_report_mining_amount * MINING_REPORTS_PER_EPOCH as u64);
         }
         assert_eq!(total_mining_amount, 209999999999_92650000);
         assert_eq!(total_mining_amount, total_circulation(4_294_967_295));
