@@ -10,7 +10,7 @@ use thousands::Separable;
 #[macro_use]
 extern crate log;
 use serde::{Deserialize, Serialize};
-use webcash::{Amount, PublicWebcash, SecretWebcash, WebcashEconomy, WEBCASH_DECIMALS};
+use webcash::{Amount, PublicWebcash, SecretWebcash, WebcashEconomy};
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
@@ -180,10 +180,10 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        circulation_formatted: (webcash_economy.get_total_circulation()
-            / 10_u128.pow(WEBCASH_DECIMALS))
-        .separate_with_commas(),
-        circulation: webcash_economy.get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS),
+        circulation_formatted: webcash_economy
+            .get_human_readable_total_circulation()
+            .separate_with_commas(),
+        circulation: webcash_economy.get_human_readable_total_circulation(),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         ratio: webcash_economy.get_ratio(),
         mining_amount: webcash_economy.get_mining_amount(),
@@ -195,8 +195,6 @@ async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    #[serde(rename = "work")]
-    _work: serde_json::Number,
     preimage: String,
     legalese: LegaleseRequest,
 }
@@ -214,12 +212,6 @@ struct PreimageRequest {
     webcash: Vec<SecretWebcash>,
     subsidy: Vec<SecretWebcash>,
     timestamp: serde_json::Number,
-    #[serde(rename = "nonce")]
-    _nonce: u64,
-    #[serde(rename = "difficulty")]
-    _difficulty: u32,
-    #[serde(rename = "legalese")]
-    _legalese: LegaleseRequest,
 }
 
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;

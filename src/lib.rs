@@ -149,12 +149,14 @@ impl std::str::FromStr for Amount {
                 return Err("overflow")?;
             }
             // Validate fractional part
-            if WEBCASH_DECIMALS < (parts[1].len() as u32) {
+            #[allow(clippy::cast_possible_truncation)]
+            let fractional_part_len = parts[1].len() as u32;
+            if WEBCASH_DECIMALS < fractional_part_len {
                 return Err("too many fractional digits")?;
             }
             let frac_part = parts[1]
                 .parse::<u64>()?
-                .checked_mul(10_u64.pow(WEBCASH_DECIMALS - (parts[1].len() as u32)));
+                .checked_mul(10_u64.pow(WEBCASH_DECIMALS - fractional_part_len));
             if frac_part.is_none() {
                 return Err("overflow")?;
             }
@@ -414,7 +416,7 @@ fn serde_default_literals_workaround_default_true() -> bool {
 
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
-    public_hash_to_amount_state: std::collections::HashMap<H256, Output>,
+    hash_to_output: std::collections::HashMap<H256, Output>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
 }
@@ -430,8 +432,8 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_total_circulation(&self) -> u128 {
-        total_circulation(self.get_mining_reports())
+    pub fn get_human_readable_total_circulation(&self) -> u128 {
+        total_circulation(self.get_mining_reports()) / 10_u128.pow(WEBCASH_DECIMALS)
     }
 
     #[must_use]
@@ -464,7 +466,7 @@ impl WebcashEconomy {
     #[must_use]
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
-            public_hash_to_amount_state: std::collections::HashMap::default(),
+            hash_to_output: std::collections::HashMap::default(),
             persist_to_disk,
         };
         if webcash_economy.persist_to_disk {
@@ -489,10 +491,10 @@ impl WebcashEconomy {
     pub fn get_total_unspent(&self) -> Amount {
         let now = std::time::Instant::now();
         let total_unspent = self
-            .public_hash_to_amount_state
+            .hash_to_output
             .values()
-            .filter(|amount_state| !amount_state.spent)
-            .map(|amount_state| amount_state.amount)
+            .filter(|output| !output.spent)
+            .map(|output| output.amount)
             .sum::<Amount>();
         trace!(
             "Calculating total unspent webcash took {} ms.",
@@ -505,9 +507,9 @@ impl WebcashEconomy {
     pub fn get_number_of_unspent_tokens(&self) -> usize {
         let now = std::time::Instant::now();
         let number_of_unspent_tokens = self
-            .public_hash_to_amount_state
+            .hash_to_output
             .values()
-            .filter(|amount_state| !amount_state.spent)
+            .filter(|output| !output.spent)
             .count();
         trace!(
             "Calculating number of unspent tokens took {} ms.",
@@ -517,8 +519,8 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    fn get_using_public_token(&self, token: &PublicWebcash) -> Option<&Output> {
-        self.public_hash_to_amount_state.get(&token.hash)
+    fn get_output_by_public_token(&self, token: &PublicWebcash) -> Option<&Output> {
+        self.hash_to_output.get(&token.hash)
     }
 
     #[must_use]
@@ -528,26 +530,26 @@ impl WebcashEconomy {
     ) -> std::collections::HashMap<String, Option<&Output>> {
         let mut outputs = std::collections::HashMap::<String, Option<&Output>>::default();
         for token in tokens {
-            outputs.insert(token.to_string(), self.get_using_public_token(token));
+            outputs.insert(token.to_string(), self.get_output_by_public_token(token));
         }
         outputs
     }
 
     #[must_use]
-    fn get_using_secret_token(&self, token: &SecretWebcash) -> Option<&Output> {
-        self.get_using_public_token(&token.to_public())
+    fn get_output_by_secret_token(&self, token: &SecretWebcash) -> Option<&Output> {
+        self.get_output_by_public_token(&token.to_public())
     }
 
     #[must_use]
     fn is_unspent_secret_token_with_correct_amount(&self, token: &SecretWebcash) -> bool {
-        let amount_state = match self.get_using_secret_token(token) {
-            Some(amount_state) => amount_state,
+        let output = match self.get_output_by_secret_token(token) {
+            Some(output) => output,
             None => return false,
         };
-        if amount_state.amount != token.amount {
+        if output.amount != token.amount {
             return false;
         }
-        if amount_state.spent {
+        if output.spent {
             return false;
         }
         true
@@ -572,7 +574,7 @@ impl WebcashEconomy {
 
     #[must_use]
     fn is_valid_output_token_with_non_taken_hash(&self, token: &SecretWebcash) -> bool {
-        self.get_using_secret_token(token).is_none()
+        self.get_output_by_secret_token(token).is_none()
     }
 
     #[must_use]
@@ -607,7 +609,7 @@ impl WebcashEconomy {
     }
 
     fn create_token(&mut self, webcash_token: &SecretWebcash) {
-        let old_value = self.public_hash_to_amount_state.insert(
+        let old_value = self.hash_to_output.insert(
             webcash_token.to_public().hash,
             Output {
                 amount: webcash_token.amount,
@@ -622,16 +624,15 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    fn create_tokens(&mut self, outputs: &Vec<SecretWebcash>) -> bool {
-        let total_unspent_before = self.get_total_unspent();
+    fn create_tokens(&mut self, outputs: &[SecretWebcash]) -> bool {
         if !self.are_valid_output_tokens_with_non_taken_hashes(outputs) {
             return false;
         }
+        let total_unspent_before = self.get_total_unspent();
         for output in outputs {
             self.create_token(output);
         }
         assert_eq!(
-            // FIXME: Should be checked before?
             Some(self.get_total_unspent() - total_unspent_before),
             outputs.total_value()
         );
@@ -666,25 +667,21 @@ impl WebcashEconomy {
 
     fn mark_as_spent(&mut self, webcash_token: &SecretWebcash) {
         assert!(self.is_unspent_secret_token_with_correct_amount(webcash_token));
-        let amount_state: &mut Output = self
-            .public_hash_to_amount_state
+        let output: &mut Output = self
+            .hash_to_output
             .get_mut(&webcash_token.to_public().hash)
             .unwrap();
-        assert_eq!(amount_state.amount, webcash_token.amount);
-        assert!(!amount_state.spent);
-        amount_state.spent = true;
+        assert_eq!(output.amount, webcash_token.amount);
+        assert!(!output.spent);
+        output.spent = true;
         debug!(
             "[diff: -] Token of amount {} marked as spent",
-            amount_state.amount.separate_with_commas()
+            output.amount.separate_with_commas()
         );
     }
 
     #[must_use]
-    pub fn replace_tokens(
-        &mut self,
-        inputs: &Vec<SecretWebcash>,
-        outputs: &Vec<SecretWebcash>,
-    ) -> bool {
+    pub fn replace_tokens(&mut self, inputs: &[SecretWebcash], outputs: &[SecretWebcash]) -> bool {
         let total_unspent_before = self.get_total_unspent();
         if !self.are_unspent_valid_input_tokens(inputs) {
             return false;
@@ -692,10 +689,7 @@ impl WebcashEconomy {
         if !self.are_valid_output_tokens_with_non_taken_hashes(outputs) {
             return false;
         }
-        if [inputs.as_slice(), outputs.as_slice()]
-            .concat()
-            .contains_duplicates()
-        {
+        if [inputs, outputs].concat().contains_duplicates() {
             return false;
         }
         if inputs.total_value() != outputs.total_value() {
@@ -722,8 +716,8 @@ impl WebcashEconomy {
         &mut self,
         preimage_string: &str,
         preimage_timestamp: i64,
-        webcash_tokens: &Vec<SecretWebcash>,
-        subsidy_tokens: &Vec<SecretWebcash>,
+        webcash_tokens: &[SecretWebcash],
+        subsidy_tokens: &[SecretWebcash],
     ) -> bool {
         if !self.is_valid_proof_of_work(preimage_string, preimage_timestamp) {
             return false;
@@ -794,16 +788,14 @@ fn total_circulation(num_mining_reports: usize) -> u128 {
     let mut total_circulation: u128 = 0;
     let mut mining_reports_in_current_epoch = num_mining_reports;
     for past_epoch in 0..epoch(num_mining_reports) {
-        total_circulation += u128::from(
-            mining_amount_per_mining_report_in_epoch(past_epoch) * MINING_REPORTS_PER_EPOCH as u64,
-        );
+        total_circulation += u128::from(mining_amount_per_mining_report_in_epoch(past_epoch))
+            * u128::from(MINING_REPORTS_PER_EPOCH as u64);
         mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
     }
     total_circulation
-        + u128::from(
-            mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
-                * mining_reports_in_current_epoch as u64,
-        )
+        + u128::from(mining_amount_per_mining_report_in_epoch(epoch(
+            num_mining_reports,
+        ))) * u128::from(mining_reports_in_current_epoch as u64)
 }
 
 #[cfg(test)]
@@ -1431,8 +1423,8 @@ mod tests {
         let mut total_mining_amount: u128 = 0;
         for epoch in 0..=100 {
             let per_mining_report_mining_amount = mining_amount_per_mining_report_in_epoch(epoch);
-            total_mining_amount +=
-                u128::from(per_mining_report_mining_amount * MINING_REPORTS_PER_EPOCH as u64);
+            total_mining_amount += u128::from(per_mining_report_mining_amount)
+                * u128::from(MINING_REPORTS_PER_EPOCH as u64);
         }
         assert_eq!(total_mining_amount, 209999999999_92650000);
         assert_eq!(total_mining_amount, total_circulation(4_294_967_295));
