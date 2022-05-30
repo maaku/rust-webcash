@@ -257,7 +257,8 @@ async fn mining_report(
         );
     }
 
-    let preimage_bytes = match base64::decode(&mining_report_request.preimage) {
+    let raw_preimage_base64 = &mining_report_request.preimage;
+    let preimage_bytes = match base64::decode(raw_preimage_base64) {
         Ok(preimage_bytes) => preimage_bytes,
         Err(_) => {
             return json_mining_report_response(
@@ -279,8 +280,8 @@ async fn mining_report(
         }
     };
 
-    let preimage: PreimageRequest = match serde_json::from_str(preimage_as_str) {
-        Ok(preimage) => preimage,
+    let preimage_request: PreimageRequest = match serde_json::from_str(preimage_as_str) {
+        Ok(preimage_request) => preimage_request,
         Err(_) => {
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
@@ -290,7 +291,7 @@ async fn mining_report(
         }
     };
 
-    let preimage_timestamp = match preimage.timestamp.as_f64() {
+    let preimage_timestamp = match preimage_request.timestamp.as_f64() {
         Some(preimage_timestamp) => preimage_timestamp,
         None => {
             return json_mining_report_response(
@@ -302,7 +303,7 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
-    let webcash_tokens = preimage.webcash;
+    let webcash_tokens = preimage_request.webcash;
     if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -311,7 +312,7 @@ async fn mining_report(
         );
     }
 
-    let subsidy_tokens = preimage.subsidy;
+    let subsidy_tokens = preimage_request.subsidy;
     if MAX_MINING_OUTPUT_SUBSIDY_TOKENS < subsidy_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -321,7 +322,7 @@ async fn mining_report(
     }
 
     let mining_successful = webcash_economy.mine_tokens(
-        &mining_report_request.preimage,
+        raw_preimage_base64,
         preimage_timestamp,
         &webcash_tokens,
         &subsidy_tokens,
