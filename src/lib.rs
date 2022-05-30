@@ -517,8 +517,20 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_using_public_token(&self, token: &PublicWebcash) -> Option<&Output> {
+    fn get_using_public_token(&self, token: &PublicWebcash) -> Option<&Output> {
         self.public_hash_to_amount_state.get(&token.hash)
+    }
+
+    #[must_use]
+    pub fn get_outputs(
+        &self,
+        tokens: &[PublicWebcash],
+    ) -> std::collections::HashMap<String, Option<&Output>> {
+        let mut outputs = std::collections::HashMap::<String, Option<&Output>>::default();
+        for token in tokens {
+            outputs.insert(token.to_string(), self.get_using_public_token(token));
+        }
+        outputs
     }
 
     #[must_use]

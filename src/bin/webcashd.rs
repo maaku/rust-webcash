@@ -384,9 +384,9 @@ const MAX_HEALTH_CHECK_TOKENS: usize = 100;
 #[allow(clippy::unused_async)]
 async fn health_check(
     data: web::Data<WebcashApplicationState>,
-    health_check_request: web::Json<Vec<PublicWebcash>>,
+    tokens: web::Json<Vec<PublicWebcash>>,
 ) -> impl actix_web::Responder {
-    if MAX_HEALTH_CHECK_TOKENS < health_check_request.len() {
+    if MAX_HEALTH_CHECK_TOKENS < tokens.len() {
         return json_health_check_response(
             JSON_STATUS_ERROR,
             "Requested number of public webcash to check exceeds maximum limit.",
@@ -395,20 +395,16 @@ async fn health_check(
     }
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
-    // TODO: Move this to separate method in WebcashEconomy. Remove public access for get_using_public_token.
-    for public_webcash_token in health_check_request.iter() {
+    let outputs = webcash_economy.get_outputs(&tokens);
+    for (token_string, output) in outputs {
         let mut spent: Option<bool> = None;
         let mut amount: Option<Amount> = None;
-        if let Some(amount_state) = webcash_economy.get_using_public_token(public_webcash_token) {
-            spent = Some(amount_state.spent);
-            amount = Some(amount_state.amount);
+        if let Some(output) = output {
+            spent = Some(output.spent);
+            amount = Some(output.amount);
         }
-        results.insert(
-            public_webcash_token.to_string(),
-            HealthCheckSpentResponse { spent, amount },
-        );
+        results.insert(token_string, HealthCheckSpentResponse { spent, amount });
     }
-    assert!(results.len() == health_check_request.len());
 
     json_health_check_response(JSON_STATUS_SUCCESS, "", results)
 }
