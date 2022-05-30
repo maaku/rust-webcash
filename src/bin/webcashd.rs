@@ -240,6 +240,13 @@ fn json_mining_report_response(
     })
 }
 
+fn decode_preimage(preimage_request_base64: &str) -> Option<PreimageRequest> {
+    let preimage_request_bytes = base64::decode(preimage_request_base64).ok()?;
+    let preimage_request_string = std::str::from_utf8(&preimage_request_bytes).ok()?;
+    let preimage_request: PreimageRequest = serde_json::from_str(preimage_request_string).ok()?;
+    Some(preimage_request)
+}
+
 #[post("/api/v1/mining_report")]
 #[cfg(not(tarpaulin_include))]
 #[allow(clippy::unused_async)]
@@ -257,35 +264,13 @@ async fn mining_report(
         );
     }
 
-    let raw_preimage_base64 = &mining_report_request.preimage;
-    let preimage_bytes = match base64::decode(raw_preimage_base64) {
-        Ok(preimage_bytes) => preimage_bytes,
-        Err(_) => {
+    let preimage_request_base64 = &mining_report_request.preimage;
+    let preimage_request = match decode_preimage(preimage_request_base64) {
+        Some(preimage_request) => preimage_request,
+        None => {
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
-                "Could not base64 decode preimage.",
-                difficulty_target_bits,
-            );
-        }
-    };
-
-    let preimage_as_str = match std::str::from_utf8(&preimage_bytes) {
-        Ok(preimage_as_str) => preimage_as_str,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not UTF-8 decode preimage bytes.",
-                difficulty_target_bits,
-            );
-        }
-    };
-
-    let preimage_request: PreimageRequest = match serde_json::from_str(preimage_as_str) {
-        Ok(preimage_request) => preimage_request,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not JSON decode preimage string.",
+                "Could not decode preimage request.",
                 difficulty_target_bits,
             );
         }
@@ -303,6 +288,7 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
+
     let webcash_tokens = preimage_request.webcash;
     if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
         return json_mining_report_response(
@@ -322,7 +308,7 @@ async fn mining_report(
     }
 
     let mining_successful = webcash_economy.mine_tokens(
-        raw_preimage_base64,
+        preimage_request_base64,
         preimage_timestamp,
         &webcash_tokens,
         &subsidy_tokens,
