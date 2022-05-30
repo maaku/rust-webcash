@@ -1312,11 +1312,11 @@ mod tests {
     fn test_mining_subsidy_amount_for_mining_report() {
         assert_eq!(mining_subsidy_amount_for_mining_report(0), 10000_00000000);
         assert_eq!(
-            mining_subsidy_amount_for_mining_report(1 * 525_000 - 1),
+            mining_subsidy_amount_for_mining_report(524_999),
             10000_00000000
         );
         assert_eq!(
-            mining_subsidy_amount_for_mining_report(1 * 525_000),
+            mining_subsidy_amount_for_mining_report(525_000),
             5000_00000000
         );
         assert_eq!(

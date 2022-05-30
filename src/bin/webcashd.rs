@@ -122,17 +122,11 @@ async fn replace(
     }
 
     let inputs = &replace_request.webcashes;
-    if inputs.is_empty() {
-        return json_replace_response(JSON_STATUS_ERROR, "Must specify input webcashes.");
-    }
     if MAX_REPLACEMENT_INPUT_TOKENS < inputs.len() {
         return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
     }
 
     let outputs = &replace_request.new_webcashes;
-    if outputs.is_empty() {
-        return json_replace_response(JSON_STATUS_ERROR, "Must specify output webcashes.");
-    }
     if MAX_REPLACEMENT_OUTPUT_TOKENS < outputs.len() {
         return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
     }
@@ -170,12 +164,12 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
 
 #[derive(Serialize)]
 struct StatsResponse {
-    circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
-    circulation: u128, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
+    circulation_formatted: String,
+    circulation: u128,
     difficulty_target_bits: u8,
-    ratio: f32,            // TODO/FIX: float here but string (decimal) in target API call.
-    mining_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
-    mining_subsidy_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
+    ratio: f32,
+    mining_amount: Amount,
+    mining_subsidy_amount: Amount,
     epoch: usize,
     mining_reports: usize,
 }
@@ -186,8 +180,6 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        // NOTE: Emulating Python server here by returning a truncated amount.
-        //       Will be inexact in the future.
         circulation_formatted: (webcash_economy.get_total_circulation()
             / 10_u128.pow(WEBCASH_DECIMALS))
         .separate_with_commas(),
@@ -310,7 +302,6 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
-    // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
     let webcash_tokens = preimage.webcash;
     if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
         return json_mining_report_response(
@@ -320,7 +311,6 @@ async fn mining_report(
         );
     }
 
-    // TODO: Claim and store server operator's tokens.
     let subsidy_tokens = preimage.subsidy;
     if MAX_MINING_OUTPUT_SUBSIDY_TOKENS < subsidy_tokens.len() {
         return json_mining_report_response(
