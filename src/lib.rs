@@ -62,13 +62,6 @@ impl std::ops::Add for Amount {
     }
 }
 
-impl std::ops::Sub for Amount {
-    type Output = Self;
-    fn sub(self, other: Self) -> Self::Output {
-        Amount::from(self.value - other.value)
-    }
-}
-
 impl std::iter::Sum for Amount {
     fn sum<I>(iter: I) -> Self
     where
@@ -83,7 +76,7 @@ impl std::convert::From<u64> for Amount {
         // Disabling this check for now, as the server is currently written in
         // such a way that Amounts are often initialized with zero.  Indedd in
         // many contexts this makes sense to do (e.g. initializing a sum
-        // accumulator).  We shoudl assess whether implementing this constraint
+        // accumulator).  We should assess whether implementing this constraint
         // is worth it.
         // assert!(1 <= n);
         assert!(n <= MAX_WEBCASH);
@@ -633,8 +626,8 @@ impl WebcashEconomy {
             self.create_token(output);
         }
         assert_eq!(
-            Some(self.get_total_unspent() - total_unspent_before),
-            outputs.total_value()
+            self.get_total_unspent(),
+            total_unspent_before + outputs.total_value().unwrap()
         );
         if self.persist_to_disk {
             self.sync_to_disk();
