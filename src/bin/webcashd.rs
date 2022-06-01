@@ -397,10 +397,10 @@ async fn main() -> std::io::Result<()> {
     let webcash_economy = WebcashEconomy::new(persist_to_disk);
     info!(
         "The economy contains {} unspent webcash (in {} tokens) at startup.",
-        webcash_economy.get_total_unspent().separate_with_commas(),
+        webcash_economy.get_total_unspent().separate_with_spaces(),
         webcash_economy
             .get_number_of_unspent_tokens()
-            .separate_with_commas()
+            .separate_with_spaces()
     );
     info!("Set the environment variable RUST_LOG=debug to print debug information.");
     info!("Quit the server with CONTROL-C.");
