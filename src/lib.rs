@@ -19,7 +19,7 @@ const HEX_STRING_LENGTH: usize = 64;
 // 2^64 webcash per output.  But this does mean that calculations of the total
 // issuance need to use u128 instead of webcash amounts.
 const MAX_WEBCASH: u64 = 92_233_720_368__5477_5807; // 2^64 - 1
-pub const WEBCASH_DECIMALS: u32 = 8;
+const WEBCASH_DECIMALS: u32 = 8;
 
 const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
 const MINING_REPORTS_PER_EPOCH: usize = 525_000;
