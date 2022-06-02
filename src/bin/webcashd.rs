@@ -86,15 +86,15 @@ struct LegaleseRequest {
 #[derive(Deserialize)]
 struct ReplaceRequest {
     legalese: LegaleseRequest,
-    webcashes: Vec<SecretWebcash>,
     new_webcashes: Vec<SecretWebcash>,
+    webcashes: Vec<SecretWebcash>,
 }
 
 #[derive(Serialize)]
 struct ReplaceResponse {
-    status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
+    status: String,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -102,8 +102,8 @@ struct ReplaceResponse {
 fn json_replace_response(status_message: &str, error_message: &str) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(ReplaceResponse {
-        status: status_message.to_string(),
         error: error_message.to_string(),
+        status: status_message.to_string(),
     })
 }
 
@@ -142,10 +142,10 @@ async fn replace(
 #[derive(Serialize)]
 struct TargetResponse {
     difficulty_target_bits: u8,
-    ratio: f32,
+    epoch: usize,
     mining_amount: Amount,
     mining_subsidy_amount: Amount,
-    epoch: usize,
+    ratio: f32,
 }
 
 #[get("/api/v1/target")]
@@ -155,23 +155,23 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(TargetResponse {
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        ratio: webcash_economy.get_ratio(),
+        epoch: webcash_economy.get_epoch(),
         mining_amount: webcash_economy.get_mining_amount(),
         mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
-        epoch: webcash_economy.get_epoch(),
+        ratio: webcash_economy.get_ratio(),
     })
 }
 
 #[derive(Serialize)]
 struct StatsResponse {
-    circulation_formatted: String,
     circulation: u128,
+    circulation_formatted: String,
     difficulty_target_bits: u8,
-    ratio: f32,
-    mining_amount: Amount,
-    mining_subsidy_amount: Amount,
     epoch: usize,
+    mining_amount: Amount,
     mining_reports: usize,
+    mining_subsidy_amount: Amount,
+    ratio: f32,
 }
 
 #[get("/stats")]
@@ -180,38 +180,38 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
+        circulation: webcash_economy.get_human_readable_total_circulation(),
         circulation_formatted: webcash_economy
             .get_human_readable_total_circulation()
             .separate_with_commas(),
-        circulation: webcash_economy.get_human_readable_total_circulation(),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        ratio: webcash_economy.get_ratio(),
-        mining_amount: webcash_economy.get_mining_amount(),
-        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
         epoch: webcash_economy.get_epoch(),
+        mining_amount: webcash_economy.get_mining_amount(),
         mining_reports: webcash_economy.get_mining_reports(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
+        ratio: webcash_economy.get_ratio(),
     })
 }
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    preimage: String,
     legalese: LegaleseRequest,
+    preimage: String,
 }
 
 #[derive(Serialize)]
 struct MiningReportResponse {
-    status: String,
+    difficulty_target_bits: u8,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    difficulty_target_bits: u8,
+    status: String,
 }
 
 #[derive(Deserialize)]
 struct PreimageRequest {
-    webcash: Vec<SecretWebcash>,
     subsidy: Vec<SecretWebcash>,
     timestamp: serde_json::Number,
+    webcash: Vec<SecretWebcash>,
 }
 
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
@@ -226,9 +226,9 @@ fn json_mining_report_response(
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(MiningReportResponse {
-        status: status_message.to_string(),
-        error: error_message.to_string(),
         difficulty_target_bits,
+        error: error_message.to_string(),
+        status: status_message.to_string(),
     })
 }
 
@@ -318,17 +318,17 @@ async fn mining_report(
 
 #[derive(Serialize)]
 struct HealthCheckSpentResponse {
-    spent: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     amount: Option<Amount>,
+    spent: Option<bool>,
 }
 
 #[derive(Serialize)]
 struct HealthCheckResponse {
-    status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
     results: std::collections::HashMap<String, HealthCheckSpentResponse>,
+    status: String,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -340,9 +340,9 @@ fn json_health_check_response(
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(HealthCheckResponse {
-        status: status_message.to_string(),
         error: error_message.to_string(),
         results,
+        status: status_message.to_string(),
     })
 }
 
@@ -364,15 +364,14 @@ async fn health_check(
     }
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
-    let outputs = webcash_economy.get_outputs(&tokens);
-    for (token_string, output) in outputs {
+    for (token_string, output) in webcash_economy.get_outputs(&tokens) {
         let mut spent: Option<bool> = None;
         let mut amount: Option<Amount> = None;
         if let Some(output) = output {
             spent = Some(output.spent);
             amount = Some(output.amount);
         }
-        results.insert(token_string, HealthCheckSpentResponse { spent, amount });
+        results.insert(token_string, HealthCheckSpentResponse { amount, spent });
     }
 
     json_health_check_response(JSON_STATUS_SUCCESS, "", results)

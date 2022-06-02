@@ -26,15 +26,15 @@ const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
 const MINING_REPORTS_PER_EPOCH: usize = 525_000;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
 const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
-const MINING_SUBSIDY_FRAC_NUMERATOR: u64 = 1; // 1/20 = 0.05
 const MINING_SUBSIDY_FRAC_DENOMINATOR: u64 = 20;
+const MINING_SUBSIDY_FRAC_NUMERATOR: u64 = 1; // 1/20 = 0.05
 
 const GENESIS_EPOCH_YYYY: i32 = 2022;
 const GENESIS_EPOCH_MM: u32 = 1;
 const GENESIS_EPOCH_DD: u32 = 8;
 
-const WEBCASH_KIND_IDENTIFIER_SECRET: &str = "secret";
 const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
+const WEBCASH_KIND_IDENTIFIER_SECRET: &str = "secret";
 
 const WEBCASH_ECONOMY_JSON_FILE: &str = "webcashd.json";
 
@@ -192,15 +192,15 @@ impl std::str::FromStr for Amount {
 
 #[derive(PartialEq)]
 enum WebcashKind {
-    Secret,
     Public,
+    Secret,
 }
 
 impl std::fmt::Display for WebcashKind {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            WebcashKind::Secret => write!(fmt, "{}", WEBCASH_KIND_IDENTIFIER_SECRET),
             WebcashKind::Public => write!(fmt, "{}", WEBCASH_KIND_IDENTIFIER_PUBLIC),
+            WebcashKind::Secret => write!(fmt, "{}", WEBCASH_KIND_IDENTIFIER_SECRET),
         }
     }
 }
@@ -209,8 +209,8 @@ impl std::str::FromStr for WebcashKind {
     type Err = Box<dyn std::error::Error>;
     fn from_str(s: &str) -> Result<WebcashKind, Self::Err> {
         match s {
-            WEBCASH_KIND_IDENTIFIER_SECRET => Ok(WebcashKind::Secret),
             WEBCASH_KIND_IDENTIFIER_PUBLIC => Ok(WebcashKind::Public),
+            WEBCASH_KIND_IDENTIFIER_SECRET => Ok(WebcashKind::Secret),
             _ => Err("unexpected webcash claim code type")?,
         }
     }
@@ -218,8 +218,8 @@ impl std::str::FromStr for WebcashKind {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct SecretWebcash {
-    secret: String,
     amount: Amount,
+    secret: String,
 }
 
 impl Serialize for SecretWebcash {
@@ -270,14 +270,14 @@ impl std::str::FromStr for SecretWebcash {
         if kind != WebcashKind::Secret {
             return Err("expected secret webcash code")?;
         }
-        Ok(SecretWebcash { secret, amount })
+        Ok(SecretWebcash { amount, secret })
     }
 }
 
 #[derive(PartialEq, Debug)]
 pub struct PublicWebcash {
-    hash: H256,
     amount: Option<Amount>,
+    hash: H256,
 }
 
 impl Serialize for PublicWebcash {
@@ -302,8 +302,8 @@ impl SecretWebcash {
     #[must_use]
     fn to_public(&self) -> PublicWebcash {
         PublicWebcash {
-            hash: H256::from_slice(&Sha256::digest(&self.secret)),
             amount: Some(self.amount),
+            hash: H256::from_slice(&Sha256::digest(&self.secret)),
         }
     }
 }
@@ -352,7 +352,7 @@ impl std::str::FromStr for PublicWebcash {
         if kind != WebcashKind::Public {
             return Err("expected public webcash code")?;
         }
-        Ok(PublicWebcash { hash, amount })
+        Ok(PublicWebcash { amount, hash })
     }
 }
 
@@ -420,8 +420,8 @@ pub struct WebcashEconomy {
     persist_to_disk: bool,
 }
 
-const DUMMY_VALUE_MINING_REPORTS: usize = 1_000_000;
 const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
+const DUMMY_VALUE_MINING_REPORTS: usize = 1_000_000;
 
 impl WebcashEconomy {
     #[must_use]
@@ -462,8 +462,8 @@ impl WebcashEconomy {
             .ymd(GENESIS_EPOCH_YYYY, GENESIS_EPOCH_MM, GENESIS_EPOCH_DD)
             .and_hms(0, 0, 0);
         #[allow(clippy::cast_precision_loss)]
-        let expected_mining_reports =
-            (chrono::Utc::now() - genesis_epoch).num_seconds() as f32 / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
+        let expected_mining_reports = (chrono::Utc::now() - genesis_epoch).num_seconds() as f32
+            / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
         assert!(expected_mining_reports >= 0.0);
         if expected_mining_reports == 0.0 {
             return 1.0;
