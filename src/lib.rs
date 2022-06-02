@@ -6,6 +6,7 @@
 use thousands::Separable;
 #[macro_use]
 extern crate log;
+use chrono::prelude::*;
 use primitive_types::H256;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -24,8 +25,13 @@ const WEBCASH_DECIMALS: u32 = 8;
 const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
 const MINING_REPORTS_PER_EPOCH: usize = 525_000;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
+const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
 const MINING_SUBSIDY_FRAC_NUMERATOR: u64 = 1; // 1/20 = 0.05
 const MINING_SUBSIDY_FRAC_DENOMINATOR: u64 = 20;
+
+const GENESIS_EPOCH_YYYY: i32 = 2022;
+const GENESIS_EPOCH_MM: u32 = 1;
+const GENESIS_EPOCH_DD: u32 = 8;
 
 const WEBCASH_KIND_IDENTIFIER_SECRET: &str = "secret";
 const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
@@ -416,7 +422,6 @@ pub struct WebcashEconomy {
 
 const DUMMY_VALUE_MINING_REPORTS: usize = 1_000_000;
 const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const DUMMY_VALUE_RATIO: f32 = 1.0001;
 
 impl WebcashEconomy {
     #[must_use]
@@ -453,7 +458,19 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_ratio(&self) -> f32 {
-        DUMMY_VALUE_RATIO
+        let genesis_epoch = chrono::Utc
+            .ymd(GENESIS_EPOCH_YYYY, GENESIS_EPOCH_MM, GENESIS_EPOCH_DD)
+            .and_hms(0, 0, 0);
+        #[allow(clippy::cast_precision_loss)]
+        let expected_mining_reports =
+            (chrono::Utc::now() - genesis_epoch).num_seconds() as f32 / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
+        assert!(expected_mining_reports >= 0.0);
+        if expected_mining_reports == 0.0 {
+            return 1.0;
+        }
+        #[allow(clippy::cast_precision_loss)]
+        let ratio = self.get_mining_reports() as f32 / expected_mining_reports;
+        ratio
     }
 
     #[must_use]
