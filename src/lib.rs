@@ -414,14 +414,19 @@ fn serde_default_literals_workaround_default_true() -> bool {
 }
 
 #[derive(Deserialize, Serialize)]
+struct MiningReport {
+    preimage: String,
+}
+
+#[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
     hash_to_output: std::collections::HashMap<H256, Output>,
+    mining_reports: Vec<MiningReport>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
 }
 
 const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const DUMMY_VALUE_MINING_REPORTS: u64 = 1_000_000;
 
 impl WebcashEconomy {
     #[must_use]
@@ -448,7 +453,7 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_mining_reports(&self) -> u64 {
-        DUMMY_VALUE_MINING_REPORTS
+        self.mining_reports.len() as u64
     }
 
     #[must_use]
@@ -465,11 +470,13 @@ impl WebcashEconomy {
         let expected_mining_reports = (chrono::Utc::now() - genesis_epoch).num_seconds() as f32
             / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
         assert!(expected_mining_reports >= 0.0);
-        if expected_mining_reports == 0.0 {
+        #[allow(clippy::cast_precision_loss)]
+        let actual_mining_reports = self.get_mining_reports() as f32;
+        if actual_mining_reports == 0.0 || expected_mining_reports == 0.0 {
             return 1.0;
         }
         #[allow(clippy::cast_precision_loss)]
-        let ratio = self.get_mining_reports() as f32 / expected_mining_reports;
+        let ratio = actual_mining_reports / expected_mining_reports;
         ratio
     }
 
@@ -477,6 +484,7 @@ impl WebcashEconomy {
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
             hash_to_output: std::collections::HashMap::default(),
+            mining_reports: Vec::<MiningReport>::default(),
             persist_to_disk,
         };
         if webcash_economy.persist_to_disk {
@@ -760,8 +768,14 @@ impl WebcashEconomy {
             return false;
         }
 
-        self.create_tokens(webcash_tokens)
+        let tokens_created = self.create_tokens(webcash_tokens);
+        if tokens_created {
+            self.mining_reports.push(MiningReport {
+                preimage: preimage_string.to_string(),
+            });
+        }
         // TODO: Claim server operator's subsidy tokens via replacement.
+        tokens_created
     }
 }
 
