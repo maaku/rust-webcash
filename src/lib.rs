@@ -23,7 +23,7 @@ const MAX_WEBCASH: u64 = 92_233_720_368__5477_5807; // 2^64 - 1
 const WEBCASH_DECIMALS: u32 = 8;
 
 const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
-const MINING_REPORTS_PER_EPOCH: usize = 525_000;
+const MINING_REPORTS_PER_EPOCH: u64 = 525_000;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
 const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
 const MINING_SUBSIDY_FRAC_DENOMINATOR: u64 = 20;
@@ -421,11 +421,11 @@ pub struct WebcashEconomy {
 }
 
 const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
-const DUMMY_VALUE_MINING_REPORTS: usize = 1_000_000;
+const DUMMY_VALUE_MINING_REPORTS: u64 = 1_000_000;
 
 impl WebcashEconomy {
     #[must_use]
-    pub fn get_epoch(&self) -> usize {
+    pub fn get_epoch(&self) -> u64 {
         epoch(self.get_mining_reports())
     }
 
@@ -447,7 +447,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_mining_reports(&self) -> usize {
+    pub fn get_mining_reports(&self) -> u64 {
         DUMMY_VALUE_MINING_REPORTS
     }
 
@@ -514,7 +514,7 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_number_of_unspent_tokens(&self) -> usize {
+    pub fn get_number_of_unspent_tokens(&self) -> u64 {
         let now = std::time::Instant::now();
         let number_of_unspent_tokens = self
             .hash_to_output
@@ -525,7 +525,7 @@ impl WebcashEconomy {
             "Calculating number of unspent tokens took {} ms.",
             now.elapsed().as_millis()
         );
-        number_of_unspent_tokens
+        number_of_unspent_tokens as u64
     }
 
     #[must_use]
@@ -766,7 +766,7 @@ impl WebcashEconomy {
 }
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
-fn mining_amount_per_mining_report_in_epoch(epoch: usize) -> u64 {
+fn mining_amount_per_mining_report_in_epoch(epoch: u64) -> u64 {
     if epoch >= 64 {
         0
     } else {
@@ -776,25 +776,25 @@ fn mining_amount_per_mining_report_in_epoch(epoch: usize) -> u64 {
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
 #[must_use]
-fn mining_amount_for_mining_report(num_mining_reports: usize) -> u64 {
+fn mining_amount_for_mining_report(num_mining_reports: u64) -> u64 {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
 }
 
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
-fn mining_subsidy_amount_for_mining_report(num_mining_reports: usize) -> u64 {
+fn mining_subsidy_amount_for_mining_report(num_mining_reports: u64) -> u64 {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
         * MINING_SUBSIDY_FRAC_NUMERATOR
         / MINING_SUBSIDY_FRAC_DENOMINATOR
 }
 
 #[must_use]
-fn epoch(num_mining_reports: usize) -> usize {
+fn epoch(num_mining_reports: u64) -> u64 {
     num_mining_reports / MINING_REPORTS_PER_EPOCH
 }
 
 #[must_use]
-fn total_circulation(num_mining_reports: usize) -> u128 {
+fn total_circulation(num_mining_reports: u64) -> u128 {
     let mut total_circulation: u128 = 0;
     let mut mining_reports_in_current_epoch = num_mining_reports;
     for past_epoch in 0..epoch(num_mining_reports) {
