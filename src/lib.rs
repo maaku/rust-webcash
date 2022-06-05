@@ -23,14 +23,12 @@ const WEBCASH_DECIMALS: u32 = 8;
 
 const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
 const MINING_REPORTS_PER_EPOCH: u64 = 525_000;
+const MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT: u64 = 128;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
 const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
+const MINING_DIFFICULTY_AT_GENESIS_EPOCH: u8 = 18;
 const MINING_SUBSIDY_FRAC_DENOMINATOR: u64 = 20;
 const MINING_SUBSIDY_FRAC_NUMERATOR: u64 = 1; // 1/20 = 0.05
-
-const GENESIS_EPOCH_YYYY: i32 = 2022;
-const GENESIS_EPOCH_MM: u32 = 1;
-const GENESIS_EPOCH_DD: u32 = 8;
 
 const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
 const WEBCASH_KIND_IDENTIFIER_SECRET: &str = "secret";
@@ -419,18 +417,24 @@ struct MiningReport {
 
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
+    genesis_date: DateTime<Utc>,
     hash_to_output: std::collections::HashMap<H256, Output>,
+    last_ratio: f32,
     mining_reports: Vec<MiningReport>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
+    target_bits: u8,
 }
-
-const DUMMY_VALUE_DIFFICULTY_TARGET_BITS: u8 = 20;
 
 impl WebcashEconomy {
     #[must_use]
     pub fn get_epoch(&self) -> u64 {
         epoch(self.get_mining_reports())
+    }
+
+    #[must_use]
+    pub fn get_genesis_date(&self) -> DateTime<Utc> {
+        self.genesis_date
     }
 
     #[must_use]
@@ -457,16 +461,13 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_difficulty_target_bits(&self) -> u8 {
-        DUMMY_VALUE_DIFFICULTY_TARGET_BITS
+        self.target_bits
     }
 
     #[must_use]
     pub fn get_ratio(&self) -> f32 {
-        let genesis_epoch = chrono::Utc
-            .ymd(GENESIS_EPOCH_YYYY, GENESIS_EPOCH_MM, GENESIS_EPOCH_DD)
-            .and_hms(0, 0, 0);
         #[allow(clippy::cast_precision_loss)]
-        let expected_mining_reports = (chrono::Utc::now() - genesis_epoch).num_seconds() as f32
+        let expected_mining_reports = (chrono::Utc::now() - self.genesis_date).num_seconds() as f32
             / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
         assert!(expected_mining_reports >= 0.0);
         #[allow(clippy::cast_precision_loss)]
@@ -482,9 +483,12 @@ impl WebcashEconomy {
     #[must_use]
     pub fn new(persist_to_disk: bool) -> WebcashEconomy {
         let mut webcash_economy = WebcashEconomy {
+            genesis_date: chrono::Utc::now(),
             hash_to_output: std::collections::HashMap::default(),
+            last_ratio: 1.0,
             mining_reports: Vec::<MiningReport>::default(),
             persist_to_disk,
+            target_bits: MINING_DIFFICULTY_AT_GENESIS_EPOCH,
         };
         if webcash_economy.persist_to_disk {
             webcash_economy.read_from_disk();
@@ -773,6 +777,28 @@ impl WebcashEconomy {
                 preimage: preimage_string.to_string(),
             });
         }
+
+        let mining_reports = self.get_mining_reports();
+        if mining_reports % MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT == 0
+            || mining_reports <= MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT
+        {
+            let ratio = self.get_ratio();
+            let ratio_delta = ratio - self.last_ratio;
+            debug!(
+                "Evaluating difficulty at mining report #{}: target_bits={} ratio={:.2} Δratio={:.2}",
+                mining_reports, self.target_bits, ratio, ratio_delta,
+            );
+            if ratio < 1.0 && ratio_delta < 0.0 && self.target_bits > 0 {
+                self.target_bits -= 1;
+                debug!("Decreasing difficulty to {}", self.target_bits);
+            }
+            if ratio > 1.0 && ratio_delta > 0.0 && self.target_bits < 64 {
+                self.target_bits += 1;
+                debug!("Increasing difficulty to {}", self.target_bits);
+            }
+            self.last_ratio = ratio;
+        }
+
         // TODO: Claim server operator's subsidy tokens via replacement.
         tokens_created
     }
