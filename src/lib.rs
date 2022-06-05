@@ -13,7 +13,6 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 const OPTIONAL_AMOUNT_PREFIX: &str = "e";
-const HEX_STRING_LENGTH: usize = 64;
 // It is a bit unfortunate, but the total issuance of webcash slightly exceeds
 // the representable range of a 64-bit integer.  We still use u64 to represent
 // amounts as no user transaction will ever have to exceed the implied limit of
@@ -323,7 +322,7 @@ impl std::fmt::Display for PublicWebcash {
 }
 
 fn is_webcash_hex_string(hex: &str) -> bool {
-    hex.len() == HEX_STRING_LENGTH
+    hex.len() == 64
         && hex.chars().all(|ch| {
             ('0'..='9').contains(&ch) || ('a'..='f').contains(&ch) || ('A'..='F').contains(&ch)
         })
