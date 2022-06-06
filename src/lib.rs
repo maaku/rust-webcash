@@ -8,6 +8,8 @@ use thousands::Separable;
 extern crate log;
 use chrono::prelude::*;
 use primitive_types::H256;
+use rand::prelude::*;
+use rand_chacha::ChaCha20Rng;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
@@ -415,14 +417,26 @@ struct MiningReport {
     preimage: String,
 }
 
+fn get_random_master_secret() -> String {
+    let mut rng = ChaCha20Rng::from_entropy();
+    let mut arr = [0u8; 32];
+    rng.fill(&mut arr[..]);
+    let master_secret = format!("{:x}", Sha256::digest(arr));
+    assert!(is_webcash_hex_string(&master_secret));
+    master_secret
+}
+
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
     genesis_date: DateTime<Utc>,
     hash_to_output: std::collections::HashMap<H256, Output>,
     last_ratio: f32,
+    // TODO: Use master_secret to create subsidy replacement tokens. Currently unused.
+    master_secret: String,
     mining_reports: Vec<MiningReport>,
     #[serde(skip, default = "serde_default_literals_workaround_default_true")]
     persist_to_disk: bool,
+    secured_subsidy_tokens: Vec<SecretWebcash>,
     target_bits: u8,
 }
 
@@ -486,8 +500,10 @@ impl WebcashEconomy {
             genesis_date: chrono::Utc::now(),
             hash_to_output: std::collections::HashMap::default(),
             last_ratio: 1.0,
+            master_secret: get_random_master_secret(),
             mining_reports: Vec::<MiningReport>::default(),
             persist_to_disk,
+            secured_subsidy_tokens: Vec::<SecretWebcash>::default(),
             target_bits: MINING_DIFFICULTY_AT_GENESIS_EPOCH,
         };
         if webcash_economy.persist_to_disk {
@@ -778,6 +794,10 @@ impl WebcashEconomy {
             });
         }
 
+        if !tokens_created {
+            return false;
+        }
+
         let mining_reports = self.get_mining_reports();
         if mining_reports % MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT == 0
             || mining_reports <= MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT
@@ -799,8 +819,32 @@ impl WebcashEconomy {
             self.last_ratio = ratio;
         }
 
-        // TODO: Claim server operator's subsidy tokens via replacement.
-        tokens_created
+        let mut server_operator_tokens: Vec<SecretWebcash> = Vec::<SecretWebcash>::default();
+        for subsidy_token in subsidy_tokens {
+            assert!(webcash_tokens.contains(subsidy_token));
+            assert!(self.is_unspent_secret_token_with_correct_amount(subsidy_token));
+            // TODO: Use deterministic tokens based on WebcashEconomy::master_secret instead of this temporary hack.
+            let replacement = SecretWebcash {
+                amount: subsidy_token.amount,
+                secret: get_random_master_secret(),
+            };
+            server_operator_tokens.push(replacement);
+        }
+
+        assert_eq!(subsidy_tokens.len(), server_operator_tokens.len());
+        let subsidy_replacements_succeeded =
+            self.replace_tokens(subsidy_tokens, &server_operator_tokens);
+        assert!(subsidy_replacements_succeeded);
+
+        for server_operator_token in server_operator_tokens {
+            debug!("Secured subsidy token: {}", server_operator_token);
+            self.secured_subsidy_tokens.push(server_operator_token);
+        }
+        if self.persist_to_disk {
+            self.sync_to_disk();
+        }
+
+        tokens_created && subsidy_replacements_succeeded
     }
 }
 
