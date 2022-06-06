@@ -390,13 +390,17 @@ async fn main() -> std::io::Result<()> {
     }
     pretty_env_logger::init_timed();
 
-    info!("Starting server instance at http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
-
+    let mining_url = format!("http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
+    info!("Starting server instance at {mining_url}");
+    info!("");
+    info!("Start mining using:");
+    info!("    webminer -server=\"{mining_url}\"");
+    info!("");
     let persist_to_disk = true;
     let webcash_economy = WebcashEconomy::new(persist_to_disk);
     info!(
-        "The economy with genesis date {} contains {} unspent webcash (in {} tokens) at startup.",
-        webcash_economy.get_genesis_date(),
+        "The economy created {} contains {} unspent webcash (in {} tokens) at startup.",
+        &webcash_economy.get_genesis_date().to_string()[..10],
         webcash_economy.get_total_unspent().separate_with_spaces(),
         webcash_economy
             .get_number_of_unspent_tokens()
