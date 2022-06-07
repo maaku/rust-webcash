@@ -414,6 +414,9 @@ fn serde_default_literals_workaround_default_true() -> bool {
 
 #[derive(Deserialize, Serialize)]
 struct MiningReport {
+    difficulty_target_bits: u8,
+    leading_zeros: u8,
+    mining_amount: Amount,
     preimage: String,
 }
 
@@ -424,6 +427,16 @@ fn get_random_master_secret() -> String {
     let master_secret = format!("{:x}", Sha256::digest(arr));
     assert!(is_webcash_hex_string(&master_secret));
     master_secret
+}
+
+fn leading_zeros(preimage: &str) -> u8 {
+    let preimage_hash = Sha256::digest(preimage);
+    let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
+    let leading_zeros = preimage_hash_as_u256.leading_zeros();
+    assert!(leading_zeros <= 255);
+    #[allow(clippy::cast_possible_truncation)]
+    let leading_zeros = leading_zeros as u8;
+    leading_zeros
 }
 
 #[derive(Deserialize, Serialize)]
@@ -519,9 +532,7 @@ impl WebcashEconomy {
         if timestamp_diff > MINING_SOLUTION_MAX_AGE_IN_SECONDS {
             return false;
         }
-        let preimage_hash = Sha256::digest(preimage);
-        let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
-        preimage_hash_as_u256.leading_zeros() >= u32::from(self.get_difficulty_target_bits())
+        leading_zeros(preimage) >= self.get_difficulty_target_bits()
     }
 
     #[must_use]
@@ -788,15 +799,17 @@ impl WebcashEconomy {
         }
 
         let tokens_created = self.create_tokens(webcash_tokens);
-        if tokens_created {
-            self.mining_reports.push(MiningReport {
-                preimage: preimage_string.to_string(),
-            });
-        }
-
         if !tokens_created {
             return false;
         }
+
+        let leading_zeros = leading_zeros(preimage_string);
+        self.mining_reports.push(MiningReport {
+            difficulty_target_bits: self.get_difficulty_target_bits(),
+            leading_zeros,
+            mining_amount,
+            preimage: preimage_string.to_string(),
+        });
 
         let mining_reports = self.get_mining_reports();
         if mining_reports % MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT == 0
@@ -805,8 +818,8 @@ impl WebcashEconomy {
             let ratio = self.get_ratio();
             let ratio_delta = ratio - self.last_ratio;
             debug!(
-                "Evaluating difficulty at mining report #{}: target_bits={} ratio={:.2} Δratio={:.2}",
-                mining_reports, self.target_bits, ratio, ratio_delta,
+                "Evaluating difficulty at mining report #{}: target_bits={} leading_zeros={} ratio={:.2} Δratio={:.2}",
+                mining_reports, self.target_bits, leading_zeros, ratio, ratio_delta,
             );
             if ratio < 1.0 && ratio_delta < 0.0 && self.target_bits > 0 {
                 self.target_bits -= 1;

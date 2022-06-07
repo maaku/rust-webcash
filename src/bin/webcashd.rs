@@ -399,7 +399,7 @@ async fn main() -> std::io::Result<()> {
     let persist_to_disk = true;
     let webcash_economy = WebcashEconomy::new(persist_to_disk);
     info!(
-        "The economy created {} contains {} unspent webcash (in {} tokens) at startup.",
+        "The economy created {} contained {} unspent webcash (in {} tokens) at startup.",
         &webcash_economy.get_genesis_date().to_string()[..10],
         webcash_economy.get_total_unspent().separate_with_spaces(),
         webcash_economy
