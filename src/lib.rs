@@ -552,6 +552,21 @@ impl WebcashEconomy {
     }
 
     #[must_use]
+    fn get_total_mined(&self) -> Amount {
+        let now = std::time::Instant::now();
+        let total_mined = self
+            .mining_reports
+            .iter()
+            .map(|mining_report| mining_report.mining_amount)
+            .sum::<Amount>();
+        trace!(
+            "Calculating total mined webcash took {} ms.",
+            now.elapsed().as_millis()
+        );
+        total_mined
+    }
+
+    #[must_use]
     pub fn get_number_of_unspent_tokens(&self) -> u64 {
         let now = std::time::Instant::now();
         let number_of_unspent_tokens = self
@@ -856,6 +871,8 @@ impl WebcashEconomy {
         if self.persist_to_disk {
             self.sync_to_disk();
         }
+
+        assert_eq!(self.get_total_mined(), self.get_total_unspent());
 
         tokens_created && subsidy_replacements_succeeded
     }
