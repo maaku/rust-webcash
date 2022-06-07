@@ -650,7 +650,7 @@ impl WebcashEconomy {
             return;
         }
         debug!(
-            "[economy] Total unspent: {} (in {} tokens)",
+            "[economy] Total unspent: ₩{} (in {} tokens)",
             self.get_total_unspent().separate_with_spaces(),
             self.get_number_of_unspent_tokens().separate_with_spaces(),
         );
@@ -666,7 +666,7 @@ impl WebcashEconomy {
         );
         assert!(old_value.is_none()); // FIXME: should check before insertion?
         debug!(
-            "[diff: +] Token of amount {} created",
+            "[diff: +] ₩{} token created",
             webcash_token.amount.separate_with_spaces()
         );
     }
@@ -723,7 +723,7 @@ impl WebcashEconomy {
         assert!(!output.spent);
         output.spent = true;
         debug!(
-            "[diff: -] Token of amount {} marked as spent",
+            "[diff: -] ₩{} token marked as spent",
             output.amount.separate_with_spaces()
         );
     }
