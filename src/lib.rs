@@ -23,7 +23,7 @@ const MINING_AMOUNT_IN_FIRST_EPOCH: u128 = 200_000__0000_0000;
 const MINING_REPORTS_PER_EPOCH: u64 = 525_000;
 const MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT: u64 = 128;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
-const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
+const MINING_SOLUTION_TARGET_IN_SECONDS: i64 = 10; // 10 seconds
 const MINING_DIFFICULTY_AT_GENESIS_EPOCH: u8 = 18;
 const MINING_SUBSIDY_FRAC_DENOMINATOR: u128 = 20;
 const MINING_SUBSIDY_FRAC_NUMERATOR: u128 = 1; // 1/20 = 0.05
@@ -164,8 +164,7 @@ impl std::str::FromStr for Amount {
                 return Err("overflow")?;
             }
             // Validate fractional part
-            #[allow(clippy::cast_possible_truncation)]
-            let fractional_part_len = parts[1].len() as u32;
+            let fractional_part_len: u32 = parts[1].len().try_into()?;
             if WEBCASH_DECIMALS < fractional_part_len {
                 return Err("too many fractional digits")?;
             }
@@ -453,16 +452,14 @@ fn leading_zeros(preimage: &str) -> u8 {
     let preimage_hash_as_u256 = primitive_types::U256::from_big_endian(&preimage_hash);
     let leading_zeros = preimage_hash_as_u256.leading_zeros();
     assert!(leading_zeros <= 255);
-    #[allow(clippy::cast_possible_truncation)]
-    let leading_zeros = leading_zeros as u8;
-    leading_zeros
+    leading_zeros.try_into().unwrap()
 }
 
 #[derive(Deserialize, Serialize)]
 pub struct WebcashEconomy {
     genesis_date: DateTime<Utc>,
     hash_to_output: std::collections::HashMap<H256, Output>,
-    last_ratio: f32,
+    last_ratio: f64,
     // TODO: Use master_secret to create subsidy replacement tokens. Currently unused.
     master_secret: String,
     mining_reports: Vec<MiningReport>,
@@ -509,18 +506,16 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_ratio(&self) -> f32 {
-        #[allow(clippy::cast_precision_loss)]
-        let expected_mining_reports = (chrono::Utc::now() - self.genesis_date).num_seconds() as f32
-            / MINING_SOLUTION_TARGET_IN_SECONDS as f32;
-        assert!(expected_mining_reports >= 0.0);
-        #[allow(clippy::cast_precision_loss)]
-        let actual_mining_reports = self.get_mining_reports() as f32;
-        if actual_mining_reports == 0.0 || expected_mining_reports == 0.0 {
+    pub fn get_ratio(&self) -> f64 {
+        let expected_mining_reports = (chrono::Utc::now() - self.genesis_date).num_seconds()
+            / MINING_SOLUTION_TARGET_IN_SECONDS;
+        assert!(expected_mining_reports >= 0);
+        let actual_mining_reports = self.get_mining_reports();
+        if actual_mining_reports == 0 || expected_mining_reports == 0 {
             return 1.0;
         }
         #[allow(clippy::cast_precision_loss)]
-        let ratio = actual_mining_reports / expected_mining_reports;
+        let ratio = actual_mining_reports as f64 / expected_mining_reports as f64;
         ratio
     }
 

@@ -145,7 +145,7 @@ struct TargetResponse {
     epoch: u64,
     mining_amount: Amount,
     mining_subsidy_amount: Amount,
-    ratio: f32,
+    ratio: f64,
 }
 
 #[get("/api/v1/target")]
@@ -171,7 +171,7 @@ struct StatsResponse {
     mining_amount: Amount,
     mining_reports: u64,
     mining_subsidy_amount: Amount,
-    ratio: f32,
+    ratio: f64,
 }
 
 #[get("/stats")]
