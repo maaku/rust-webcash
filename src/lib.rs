@@ -15,22 +15,18 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
 
 const OPTIONAL_AMOUNT_PREFIX: &str = "e";
-// It is a bit unfortunate, but the total issuance of webcash slightly exceeds
-// the representable range of a 64-bit integer.  We still use u64 to represent
-// amounts as no user transaction will ever have to exceed the implied limit of
-// 2^64 webcash per output.  But this does mean that calculations of the total
-// issuance need to use u128 instead of webcash amounts.
-const MAX_WEBCASH: u64 = 92_233_720_368__5477_5807; // 2^64 - 1
+const MAX_WEBCASH: u128 = 209_999_999_999__9265_0000;
 const WEBCASH_DECIMALS: u32 = 8;
 
-const MINING_AMOUNT_IN_FIRST_EPOCH: u64 = 200_000__0000_0000;
+const MINING_AMOUNT_IN_FIRST_EPOCH: u128 = 200_000__0000_0000;
+
 const MINING_REPORTS_PER_EPOCH: u64 = 525_000;
 const MINING_REPORTS_PER_DIFFICULTY_ADJUSTMENT: u64 = 128;
 const MINING_SOLUTION_MAX_AGE_IN_SECONDS: u64 = 2 * 60 * 60; // 2 hrs
 const MINING_SOLUTION_TARGET_IN_SECONDS: u32 = 10; // 10 seconds
 const MINING_DIFFICULTY_AT_GENESIS_EPOCH: u8 = 18;
-const MINING_SUBSIDY_FRAC_DENOMINATOR: u64 = 20;
-const MINING_SUBSIDY_FRAC_NUMERATOR: u64 = 1; // 1/20 = 0.05
+const MINING_SUBSIDY_FRAC_DENOMINATOR: u128 = 20;
+const MINING_SUBSIDY_FRAC_NUMERATOR: u128 = 1; // 1/20 = 0.05
 
 const WEBCASH_KIND_IDENTIFIER_PUBLIC: &str = "public";
 const WEBCASH_KIND_IDENTIFIER_SECRET: &str = "secret";
@@ -39,7 +35,7 @@ const WEBCASH_ECONOMY_JSON_FILE: &str = "webcashd.json";
 
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Amount {
-    value: u64,
+    value: u128,
 }
 
 impl Serialize for Amount {
@@ -67,18 +63,17 @@ impl std::ops::Add for Amount {
     }
 }
 
-// TODO: How to handle the case where sum > u64 max?
 impl std::iter::Sum for Amount {
     fn sum<I>(iter: I) -> Self
     where
         I: Iterator<Item = Self>,
     {
-        Self::from(iter.map(|wc| wc.value).sum::<u64>())
+        Self::from(iter.map(|wc| wc.value).sum::<u128>())
     }
 }
 
-impl std::convert::From<u64> for Amount {
-    fn from(n: u64) -> Self {
+impl std::convert::From<u128> for Amount {
+    fn from(n: u128) -> Self {
         // Disabling this check for now, as the server is currently written in
         // such a way that Amounts are often initialized with zero.  Indedd in
         // many contexts this makes sense to do (e.g. initializing a sum
@@ -93,8 +88,8 @@ impl std::convert::From<u64> for Amount {
 impl std::fmt::Display for Amount {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         let divmod = (
-            self.value / 10_u64.pow(WEBCASH_DECIMALS),
-            self.value % 10_u64.pow(WEBCASH_DECIMALS),
+            self.value / 10_u128.pow(WEBCASH_DECIMALS),
+            self.value % 10_u128.pow(WEBCASH_DECIMALS),
         );
         if divmod.1 == 0 {
             // Integer number of webcash, so don't use a decimal point.
@@ -142,8 +137,8 @@ impl std::str::FromStr for Amount {
                 return Err("amount string contains unexpected characters")?;
             }
             let int_part = parts[0]
-                .parse::<u64>()?
-                .checked_mul(10_u64.pow(WEBCASH_DECIMALS));
+                .parse::<u128>()?
+                .checked_mul(10_u128.pow(WEBCASH_DECIMALS));
             if int_part.is_none() {
                 return Err("overflow")?;
             }
@@ -154,8 +149,8 @@ impl std::str::FromStr for Amount {
                 return Err("too many fractional digits")?;
             }
             let frac_part = parts[1]
-                .parse::<u64>()?
-                .checked_mul(10_u64.pow(WEBCASH_DECIMALS - fractional_part_len));
+                .parse::<u128>()?
+                .checked_mul(10_u128.pow(WEBCASH_DECIMALS - fractional_part_len));
             if frac_part.is_none() {
                 return Err("overflow")?;
             }
@@ -174,7 +169,9 @@ impl std::str::FromStr for Amount {
             Ok(Amount::from(n))
         } else {
             // Parse and scale string as integer part only
-            let n = s.parse::<u64>()?.checked_mul(10_u64.pow(WEBCASH_DECIMALS));
+            let n = s
+                .parse::<u128>()?
+                .checked_mul(10_u128.pow(WEBCASH_DECIMALS));
             if n.is_none() {
                 return Err("overflow")?;
             }
@@ -539,7 +536,6 @@ impl WebcashEconomy {
     #[must_use]
     pub fn get_total_unspent(&self) -> Amount {
         let now = std::time::Instant::now();
-        // TODO: How to handle the case where sum > u64 max?
         let total_unspent = self
             .hash_to_output
             .values()
@@ -556,7 +552,6 @@ impl WebcashEconomy {
     #[must_use]
     fn get_total_mined(&self) -> Amount {
         let now = std::time::Instant::now();
-        // TODO: How to handle the case where sum > u64 max?
         let total_mined = self
             .mining_reports
             .iter()
@@ -882,23 +877,23 @@ impl WebcashEconomy {
 }
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
-fn mining_amount_per_mining_report_in_epoch(epoch: u64) -> u64 {
+fn mining_amount_per_mining_report_in_epoch(epoch: u64) -> u128 {
     if epoch >= 64 {
         0
     } else {
-        MINING_AMOUNT_IN_FIRST_EPOCH >> epoch
+        MINING_AMOUNT_IN_FIRST_EPOCH >> u128::from(epoch)
     }
 }
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
 #[must_use]
-fn mining_amount_for_mining_report(num_mining_reports: u64) -> u64 {
+fn mining_amount_for_mining_report(num_mining_reports: u64) -> u128 {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
 }
 
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
-fn mining_subsidy_amount_for_mining_report(num_mining_reports: u64) -> u64 {
+fn mining_subsidy_amount_for_mining_report(num_mining_reports: u64) -> u128 {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
         * MINING_SUBSIDY_FRAC_NUMERATOR
         / MINING_SUBSIDY_FRAC_DENOMINATOR
@@ -914,14 +909,13 @@ fn total_circulation(num_mining_reports: u64) -> u128 {
     let mut total_circulation: u128 = 0;
     let mut mining_reports_in_current_epoch = num_mining_reports;
     for past_epoch in 0..epoch(num_mining_reports) {
-        total_circulation += u128::from(mining_amount_per_mining_report_in_epoch(past_epoch))
+        total_circulation += mining_amount_per_mining_report_in_epoch(past_epoch)
             * u128::from(MINING_REPORTS_PER_EPOCH as u64);
         mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
     }
     total_circulation
-        + u128::from(mining_amount_per_mining_report_in_epoch(epoch(
-            num_mining_reports,
-        ))) * u128::from(mining_reports_in_current_epoch as u64)
+        + mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
+            * u128::from(mining_reports_in_current_epoch as u64)
 }
 
 #[cfg(test)]
@@ -1025,7 +1019,7 @@ mod tests {
             String::from("e1:secret:12345678901234567890123456789012345678901234567890123456789abcd4"),
             String::from("e92233720368.54775808:secret:12345678901234567890123456789012345678901234567890123456789abcd2"),
         ];
-        assert_eq!(parse_secret_webcash(&invalid_tokens).len(), 3);
+        assert_eq!(parse_secret_webcash(&invalid_tokens).len(), 4);
 
         let duplicate_hex_1 = vec![
             String::from("e0.00000001:secret:12345678901234567890123456789012345678901234567890123456789abcd1"),
@@ -1082,9 +1076,23 @@ mod tests {
         assert!(!is_webcash_amount("0.000000001"));
         assert!(!is_webcash_amount("1.000000001"));
         assert!(!is_webcash_amount("92233720368.547758069"));
-        assert!(!is_webcash_amount("92233720368.54775808"));
-        assert!(!is_webcash_amount("92233720368.6"));
-        assert!(!is_webcash_amount("92233720369"));
+        assert!(is_webcash_amount("92233720368.54775808"));
+        assert!(is_webcash_amount("92233720368.6"));
+        assert!(is_webcash_amount("92233720369"));
+
+        assert!(is_webcash_amount("209999999999"));
+        assert!(is_webcash_amount("209999999999.92650000"));
+        assert!(!is_webcash_amount("209999999999.92650001"));
+        assert!(is_webcash_amount("209999999999.9265000"));
+        assert!(!is_webcash_amount("209999999999.9265001"));
+        assert!(is_webcash_amount("209999999999.926500"));
+        assert!(!is_webcash_amount("209999999999.926501"));
+        assert!(is_webcash_amount("209999999999.92650"));
+        assert!(!is_webcash_amount("209999999999.92651"));
+        assert!(is_webcash_amount("209999999999.9265"));
+        assert!(!is_webcash_amount("209999999999.9266"));
+        assert!(!is_webcash_amount("210000000000"));
+
         assert!(!is_webcash_amount("-0"));
         assert!(!is_webcash_amount("-1"));
         assert!(!is_webcash_amount("-1.1"));
@@ -1322,7 +1330,7 @@ mod tests {
         assert!(!is_webcash_token(
             "e92233720368.547758070:secret:12345678901234567890123456789012345678901234567890123456789abcde"
         ));
-        assert!(!is_webcash_token(
+        assert!(is_webcash_token(
             "e92233720368.54775808:secret:12345678901234567890123456789012345678901234567890123456789abcde"
         ));
         assert!(!is_webcash_token(
