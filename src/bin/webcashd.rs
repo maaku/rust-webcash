@@ -164,7 +164,7 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
 
 #[derive(Serialize)]
 struct StatsResponse {
-    circulation: u128,
+    circulation: Amount,
     circulation_formatted: String,
     difficulty_target_bits: u8,
     epoch: u64,
@@ -180,9 +180,9 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        circulation: webcash_economy.get_human_readable_total_circulation(),
+        circulation: webcash_economy.get_total_circulation(),
         circulation_formatted: webcash_economy
-            .get_human_readable_total_circulation()
+            .get_total_circulation()
             .separate_with_commas(),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
         epoch: webcash_economy.get_epoch(),

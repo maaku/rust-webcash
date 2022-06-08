@@ -463,8 +463,8 @@ impl WebcashEconomy {
     }
 
     #[must_use]
-    pub fn get_human_readable_total_circulation(&self) -> u128 {
-        total_circulation(self.get_mining_reports()) / 10_u128.pow(WEBCASH_DECIMALS)
+    pub fn get_total_circulation(&self) -> Amount {
+        Amount::from(total_circulation(self.get_mining_reports()))
     }
 
     #[must_use]
