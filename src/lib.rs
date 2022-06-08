@@ -63,6 +63,27 @@ impl std::ops::Add for Amount {
     }
 }
 
+impl std::ops::AddAssign for Amount {
+    fn add_assign(&mut self, other: Self) {
+        self.value += other.value;
+        assert!(self.value <= MAX_WEBCASH);
+    }
+}
+
+impl std::ops::Mul for Amount {
+    type Output = Self;
+    fn mul(self, other: Self) -> Self::Output {
+        Amount::from(self.value * other.value)
+    }
+}
+
+impl std::ops::Div for Amount {
+    type Output = Self;
+    fn div(self, other: Self) -> Self::Output {
+        Amount::from(self.value / other.value)
+    }
+}
+
 impl std::iter::Sum for Amount {
     fn sum<I>(iter: I) -> Self
     where
@@ -464,19 +485,17 @@ impl WebcashEconomy {
 
     #[must_use]
     pub fn get_total_circulation(&self) -> Amount {
-        Amount::from(total_circulation(self.get_mining_reports()))
+        total_circulation(self.get_mining_reports())
     }
 
     #[must_use]
     pub fn get_mining_amount(&self) -> Amount {
-        Amount::from(mining_amount_for_mining_report(self.get_mining_reports()))
+        mining_amount_for_mining_report(self.get_mining_reports())
     }
 
     #[must_use]
     pub fn get_subsidy_amount(&self) -> Amount {
-        Amount::from(mining_subsidy_amount_for_mining_report(
-            self.get_mining_reports(),
-        ))
+        mining_subsidy_amount_for_mining_report(self.get_mining_reports())
     }
 
     #[must_use]
@@ -877,26 +896,26 @@ impl WebcashEconomy {
 }
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
-fn mining_amount_per_mining_report_in_epoch(epoch: u64) -> u128 {
+fn mining_amount_per_mining_report_in_epoch(epoch: u64) -> Amount {
     if epoch >= 64 {
-        0
+        Amount::from(0)
     } else {
-        MINING_AMOUNT_IN_FIRST_EPOCH >> u128::from(epoch)
+        Amount::from(MINING_AMOUNT_IN_FIRST_EPOCH >> u128::from(epoch))
     }
 }
 
 // TODO: How to handle zero return value case (in the future when no mining reward))? Is not a valid webcash amount.
 #[must_use]
-fn mining_amount_for_mining_report(num_mining_reports: u64) -> u128 {
+fn mining_amount_for_mining_report(num_mining_reports: u64) -> Amount {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
 }
 
 // TODO: How to handle zero return value case? Is not a valid webcash amount.
 #[must_use]
-fn mining_subsidy_amount_for_mining_report(num_mining_reports: u64) -> u128 {
+fn mining_subsidy_amount_for_mining_report(num_mining_reports: u64) -> Amount {
     mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
-        * MINING_SUBSIDY_FRAC_NUMERATOR
-        / MINING_SUBSIDY_FRAC_DENOMINATOR
+        * Amount::from(MINING_SUBSIDY_FRAC_NUMERATOR)
+        / Amount::from(MINING_SUBSIDY_FRAC_DENOMINATOR)
 }
 
 #[must_use]
@@ -905,17 +924,17 @@ fn epoch(num_mining_reports: u64) -> u64 {
 }
 
 #[must_use]
-fn total_circulation(num_mining_reports: u64) -> u128 {
-    let mut total_circulation: u128 = 0;
-    let mut mining_reports_in_current_epoch = num_mining_reports;
+fn total_circulation(num_mining_reports: u64) -> Amount {
+    let mut total_circulation = Amount::from(0);
+    let mut mining_reports_in_current_epoch: u128 = num_mining_reports.into();
     for past_epoch in 0..epoch(num_mining_reports) {
         total_circulation += mining_amount_per_mining_report_in_epoch(past_epoch)
-            * u128::from(MINING_REPORTS_PER_EPOCH as u64);
-        mining_reports_in_current_epoch -= MINING_REPORTS_PER_EPOCH;
+            * Amount::from(u128::from(MINING_REPORTS_PER_EPOCH));
+        mining_reports_in_current_epoch -= u128::from(MINING_REPORTS_PER_EPOCH);
     }
     total_circulation
         + mining_amount_per_mining_report_in_epoch(epoch(num_mining_reports))
-            * u128::from(mining_reports_in_current_epoch as u64)
+            * Amount::from(mining_reports_in_current_epoch)
 }
 
 #[cfg(test)]
@@ -1356,169 +1375,358 @@ mod tests {
     fn test_mining_amount_per_mining_report_in_epoch() {
         assert_eq!(
             mining_amount_per_mining_report_in_epoch(0),
-            MINING_AMOUNT_IN_FIRST_EPOCH
+            Amount::from(MINING_AMOUNT_IN_FIRST_EPOCH)
         );
-        assert_eq!(mining_amount_per_mining_report_in_epoch(43), 2);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(44), 1);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(45), 0);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(63), 0);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(64), 0);
-        assert_eq!(mining_amount_per_mining_report_in_epoch(10_000_000), 0);
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(1),
+            Amount::from(100000_00000000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(2),
+            Amount::from(50000_00000000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(3),
+            Amount::from(25000_00000000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(4),
+            Amount::from(12500_00000000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(5),
+            Amount::from(6250_00000000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(10),
+            Amount::from(195_31250000)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(15),
+            Amount::from(6_10351562)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(20),
+            Amount::from(19073486)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(25),
+            Amount::from(596046)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(30),
+            Amount::from(18626)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(35),
+            Amount::from(582)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(40),
+            Amount::from(18)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(43),
+            Amount::from(2)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(44),
+            Amount::from(1)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(45),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(63),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(64),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_per_mining_report_in_epoch(10_000_000),
+            Amount::from(0)
+        );
     }
 
     #[test]
     fn test_mining_amount_for_mining_report() {
-        assert_eq!(mining_amount_for_mining_report(1), 200000_00000000);
-        assert_eq!(mining_amount_for_mining_report(2), 200000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(1),
+            Amount::from(200000_00000000)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(2),
+            Amount::from(200000_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(525_000 - 1),
-            200000_00000000
+            Amount::from(200000_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(525_000), 100000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(525_000),
+            Amount::from(100000_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(2 * 525_000 - 1),
-            100000_00000000
+            Amount::from(100000_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(2 * 525_000), 50000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(2 * 525_000),
+            Amount::from(50000_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(3 * 525_000 - 1),
-            50000_00000000
+            Amount::from(50000_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(3 * 525_000), 25000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(3 * 525_000),
+            Amount::from(25000_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(4 * 525_000 - 1),
-            25000_00000000
+            Amount::from(25000_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(4 * 525_000), 12500_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(4 * 525_000),
+            Amount::from(12500_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(5 * 525_000 - 1),
-            12500_00000000
+            Amount::from(12500_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(5 * 525_000), 6250_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(5 * 525_000),
+            Amount::from(6250_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(6 * 525_000 - 1),
-            6250_00000000
+            Amount::from(6250_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(6 * 525_000), 3125_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(6 * 525_000),
+            Amount::from(3125_00000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(7 * 525_000 - 1),
-            3125_00000000
+            Amount::from(3125_00000000)
         );
-        assert_eq!(mining_amount_for_mining_report(7 * 525_000), 1562_50000000);
+        assert_eq!(
+            mining_amount_for_mining_report(7 * 525_000),
+            Amount::from(1562_50000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(8 * 525_000 - 1),
-            1562_50000000
+            Amount::from(1562_50000000)
         );
-        assert_eq!(mining_amount_for_mining_report(8 * 525_000), 781_25000000);
+        assert_eq!(
+            mining_amount_for_mining_report(8 * 525_000),
+            Amount::from(781_25000000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(9 * 525_000 - 1),
-            781_25000000
+            Amount::from(781_25000000)
         );
-        assert_eq!(mining_amount_for_mining_report(9 * 525_000), 390_62500000);
+        assert_eq!(
+            mining_amount_for_mining_report(9 * 525_000),
+            Amount::from(390_62500000)
+        );
         assert_eq!(
             mining_amount_for_mining_report(10 * 525_000 - 1),
-            390_62500000
+            Amount::from(390_62500000)
         );
-        assert_eq!(mining_amount_for_mining_report(10 * 525_000), 195_31250000);
-        assert_eq!(mining_amount_for_mining_report(20 * 525_000), 19073486);
-        assert_eq!(mining_amount_for_mining_report(30 * 525_000), 18626);
-        assert_eq!(mining_amount_for_mining_report(40 * 525_000), 18);
-        assert_eq!(mining_amount_for_mining_report(41 * 525_000), 9);
-        assert_eq!(mining_amount_for_mining_report(42 * 525_000), 4);
-        assert_eq!(mining_amount_for_mining_report(43 * 525_000), 2);
-        assert_eq!(mining_amount_for_mining_report(44 * 525_000), 1);
-        assert_eq!(mining_amount_for_mining_report(45 * 525_000), 0);
-        assert_eq!(mining_amount_for_mining_report(50 * 525_000), 0);
-        assert_eq!(mining_amount_for_mining_report(100 * 525_000), 0);
-        assert_eq!(mining_amount_for_mining_report(1000 * 525_000), 0);
-        assert_eq!(mining_amount_for_mining_report(1_069_352), 50000_00000000);
+        assert_eq!(
+            mining_amount_for_mining_report(10 * 525_000),
+            Amount::from(195_31250000)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(20 * 525_000),
+            Amount::from(19073486)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(30 * 525_000),
+            Amount::from(18626)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(40 * 525_000),
+            Amount::from(18)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(41 * 525_000),
+            Amount::from(9)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(42 * 525_000),
+            Amount::from(4)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(43 * 525_000),
+            Amount::from(2)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(44 * 525_000),
+            Amount::from(1)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(45 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(50 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(100 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(1000 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_amount_for_mining_report(1_069_352),
+            Amount::from(50000_00000000)
+        );
     }
 
     #[test]
     fn test_mining_subsidy_amount_for_mining_report() {
-        assert_eq!(mining_subsidy_amount_for_mining_report(0), 10000_00000000);
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(0),
+            Amount::from(10000_00000000)
+        );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(524_999),
-            10000_00000000
+            Amount::from(10000_00000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(525_000),
-            5000_00000000
+            Amount::from(5000_00000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(2 * 525_000 - 1),
-            5000_00000000
+            Amount::from(5000_00000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(2 * 525_000),
-            2500_00000000
+            Amount::from(2500_00000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(5 * 525_000 - 1),
-            625_00000000
+            Amount::from(625_00000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(5 * 525_000),
-            312_50000000
+            Amount::from(312_50000000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(8 * 525_000 - 1),
-            78_12500000
+            Amount::from(78_12500000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(8 * 525_000),
-            39_06250000
+            Amount::from(39_06250000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(10 * 525_000 - 1),
-            19_53125000
+            Amount::from(19_53125000)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(10 * 525_000),
-            9_76562500
+            Amount::from(9_76562500)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(20 * 525_000 - 1),
-            1907348
+            Amount::from(1907348)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(20 * 525_000),
-            953674
+            Amount::from(953674)
         );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(30 * 525_000 - 1),
-            1862
+            Amount::from(1862)
         );
-        assert_eq!(mining_subsidy_amount_for_mining_report(30 * 525_000), 931);
-        assert_eq!(mining_subsidy_amount_for_mining_report(39 * 525_000 - 1), 3);
-        assert_eq!(mining_subsidy_amount_for_mining_report(39 * 525_000), 1);
-        assert_eq!(mining_subsidy_amount_for_mining_report(40 * 525_000 - 1), 1);
-        assert_eq!(mining_subsidy_amount_for_mining_report(40 * 525_000), 0);
-        assert_eq!(mining_subsidy_amount_for_mining_report(41 * 525_000 - 1), 0);
-        assert_eq!(mining_subsidy_amount_for_mining_report(41 * 525_000), 0);
-        assert_eq!(mining_subsidy_amount_for_mining_report(100 * 525_000), 0);
-        assert_eq!(mining_subsidy_amount_for_mining_report(1000 * 525_000), 0);
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(30 * 525_000),
+            Amount::from(931)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(39 * 525_000 - 1),
+            Amount::from(3)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(39 * 525_000),
+            Amount::from(1)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(40 * 525_000 - 1),
+            Amount::from(1)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(40 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(41 * 525_000 - 1),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(41 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(100 * 525_000),
+            Amount::from(0)
+        );
+        assert_eq!(
+            mining_subsidy_amount_for_mining_report(1000 * 525_000),
+            Amount::from(0)
+        );
         assert_eq!(
             mining_subsidy_amount_for_mining_report(1_069_352),
-            2500_00000000
+            Amount::from(2500_00000000)
         );
     }
 
     #[test]
     fn test_total_circulation() {
-        assert_eq!(total_circulation(1), 200000_00000000);
-        assert_eq!(total_circulation(10), 2000000_00000000);
-        assert_eq!(total_circulation(100), 20000000_00000000);
-        assert_eq!(total_circulation(1000), 200000000_00000000);
-        assert_eq!(total_circulation(10000), 2000000000_00000000);
-        assert_eq!(total_circulation(100_000), 20000000000_00000000);
-        assert_eq!(total_circulation(1_000_000), 152500000000_00000000);
-        assert_eq!(total_circulation(10_000_000), 209999608993_52125000);
-        assert_eq!(total_circulation(100_000_000), TOTAL_ISSUANCE);
-        assert_eq!(total_circulation(1_000_000_000), TOTAL_ISSUANCE);
-        assert_eq!(total_circulation(524_999), 104999800000_00000000);
-        assert_eq!(total_circulation(525_000), 105000000000_00000000);
-        assert_eq!(total_circulation(525_001), 105000100000_00000000);
+        assert_eq!(total_circulation(1), Amount::from(200000_00000000));
+        assert_eq!(total_circulation(10), Amount::from(2000000_00000000));
+        assert_eq!(total_circulation(100), Amount::from(20000000_00000000));
+        assert_eq!(total_circulation(1000), Amount::from(200000000_00000000));
+        assert_eq!(total_circulation(10000), Amount::from(2000000000_00000000));
+        assert_eq!(
+            total_circulation(100_000),
+            Amount::from(20000000000_00000000)
+        );
+        assert_eq!(
+            total_circulation(1_000_000),
+            Amount::from(152500000000_00000000)
+        );
+        assert_eq!(
+            total_circulation(10_000_000),
+            Amount::from(209999608993_52125000)
+        );
+        assert_eq!(total_circulation(100_000_000), Amount::from(TOTAL_ISSUANCE));
+        assert_eq!(
+            total_circulation(1_000_000_000),
+            Amount::from(TOTAL_ISSUANCE)
+        );
+        assert_eq!(
+            total_circulation(524_999),
+            Amount::from(104999800000_00000000)
+        );
+        assert_eq!(
+            total_circulation(525_000),
+            Amount::from(105000000000_00000000)
+        );
+        assert_eq!(
+            total_circulation(525_001),
+            Amount::from(105000100000_00000000)
+        );
     }
 
     #[test]
@@ -1527,7 +1735,7 @@ mod tests {
         let first_zero_reward_epoch;
         loop {
             let reward_in_epoch = mining_amount_per_mining_report_in_epoch(epoch);
-            if reward_in_epoch == 0 {
+            if reward_in_epoch == Amount::from(0) {
                 first_zero_reward_epoch = epoch;
                 break;
             }
@@ -1536,7 +1744,7 @@ mod tests {
         assert_eq!(first_zero_reward_epoch, 45);
         assert_eq!(
             mining_amount_per_mining_report_in_epoch(first_zero_reward_epoch),
-            0
+            Amount::from(0)
         );
         assert_ne!(
             total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH - 1),
@@ -1548,21 +1756,21 @@ mod tests {
         );
         assert_eq!(
             total_circulation(first_zero_reward_epoch * MINING_REPORTS_PER_EPOCH),
-            209999999999_92650000
+            Amount::from(209999999999_92650000)
         );
     }
 
     #[test]
     fn test_total_mining_amount() {
-        let mut total_mining_amount: u128 = 0;
+        let mut total_mining_amount = Amount::from(0);
         for epoch in 0..=100 {
             let per_mining_report_mining_amount = mining_amount_per_mining_report_in_epoch(epoch);
-            total_mining_amount += u128::from(per_mining_report_mining_amount)
-                * u128::from(MINING_REPORTS_PER_EPOCH as u64);
+            total_mining_amount += per_mining_report_mining_amount
+                * Amount::from(u128::from(MINING_REPORTS_PER_EPOCH));
         }
-        assert_eq!(total_mining_amount, 209999999999_92650000);
+        assert_eq!(total_mining_amount, Amount::from(209999999999_92650000));
         assert_eq!(total_mining_amount, total_circulation(4_294_967_295));
-        assert_eq!(TOTAL_ISSUANCE - total_mining_amount, 0);
+        assert_eq!(total_mining_amount, Amount::from(TOTAL_ISSUANCE));
     }
 }
 
