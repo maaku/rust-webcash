@@ -10,16 +10,14 @@ use thousands::Separable;
 #[macro_use]
 extern crate log;
 use serde::{Deserialize, Serialize};
-use webcash::{
-    Amount, CheckForDuplicates, PublicWebcash, SecretWebcash, SumAmounts, WebcashEconomy,
-    WEBCASH_DECIMALS,
-};
+use webcash::{Amount, PublicWebcash, SecretWebcash, WebcashEconomy};
 
 const DEFAULT_RUST_LOG: &str = "info,actix_server=warn";
 
 const SERVER_BIND_ADDRESS: &str = "127.0.0.1";
 const SERVER_BIND_PORT: u16 = 8000;
 
+// TODO: Return status_code != 200 when JSON_STATUS_ERROR
 const JSON_STATUS_ERROR: &str = "error";
 const JSON_STATUS_SUCCESS: &str = "success";
 
@@ -88,15 +86,15 @@ struct LegaleseRequest {
 #[derive(Deserialize)]
 struct ReplaceRequest {
     legalese: LegaleseRequest,
-    webcashes: Vec<SecretWebcash>,
     new_webcashes: Vec<SecretWebcash>,
+    webcashes: Vec<SecretWebcash>,
 }
 
 #[derive(Serialize)]
 struct ReplaceResponse {
-    status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
+    status: String,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -104,8 +102,8 @@ struct ReplaceResponse {
 fn json_replace_response(status_message: &str, error_message: &str) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(ReplaceResponse {
-        status: status_message.to_string(),
         error: error_message.to_string(),
+        status: status_message.to_string(),
     })
 }
 
@@ -124,30 +122,13 @@ async fn replace(
     }
 
     let inputs = &replace_request.webcashes;
-    if inputs.is_empty() {
-        return json_replace_response(JSON_STATUS_ERROR, "Must specify input webcashes.");
-    }
     if MAX_REPLACEMENT_INPUT_TOKENS < inputs.len() {
         return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
     }
 
     let outputs = &replace_request.new_webcashes;
-    if outputs.is_empty() {
-        return json_replace_response(JSON_STATUS_ERROR, "Must specify output webcashes.");
-    }
     if MAX_REPLACEMENT_OUTPUT_TOKENS < outputs.len() {
         return json_replace_response(JSON_STATUS_ERROR, "Number of inputs exceeds maximum limit.");
-    }
-
-    if inputs.total_value() != outputs.total_value() {
-        return json_replace_response(JSON_STATUS_ERROR, "Amount mismatch.");
-    }
-
-    if [inputs.as_slice(), outputs.as_slice()]
-        .concat()
-        .contains_duplicates()
-    {
-        return json_replace_response(JSON_STATUS_ERROR, "Duplicate webcash.");
     }
 
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
@@ -161,10 +142,10 @@ async fn replace(
 #[derive(Serialize)]
 struct TargetResponse {
     difficulty_target_bits: u8,
-    ratio: f32,
+    epoch: u64,
     mining_amount: Amount,
     mining_subsidy_amount: Amount,
-    epoch: usize,
+    ratio: f64,
 }
 
 #[get("/api/v1/target")]
@@ -174,23 +155,23 @@ async fn target(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(TargetResponse {
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        ratio: webcash_economy.get_ratio(),
+        epoch: webcash_economy.get_epoch(),
         mining_amount: webcash_economy.get_mining_amount(),
         mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
-        epoch: webcash_economy.get_epoch(),
+        ratio: webcash_economy.get_ratio(),
     })
 }
 
 #[derive(Serialize)]
 struct StatsResponse {
-    circulation_formatted: String, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
-    circulation: u128, // NOTE: Inexact. Live environment does not use decimals here. Uses integers?
+    circulation: Amount,
+    circulation_formatted: String,
     difficulty_target_bits: u8,
-    ratio: f32,            // TODO/FIX: float here but string (decimal) in target API call.
-    mining_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
-    mining_subsidy_amount: Amount, // NOTE: Live environment has "mining_amount": "50000.0", "mining_subsidy_amount": "2500.00". Different granularity?
-    epoch: usize,
-    mining_reports: usize,
+    epoch: u64,
+    mining_amount: Amount,
+    mining_reports: u64,
+    mining_subsidy_amount: Amount,
+    ratio: f64,
 }
 
 #[get("/stats")]
@@ -199,46 +180,38 @@ struct StatsResponse {
 async fn stats(data: web::Data<WebcashApplicationState>) -> impl Responder {
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     web::Json(StatsResponse {
-        // NOTE: Emulating Python server here by returning a truncated amount.
-        //       Will be inexact in the future.
-        circulation_formatted: (webcash_economy.get_total_circulation()
-            / 10_u128.pow(WEBCASH_DECIMALS))
-        .separate_with_commas(),
-        circulation: webcash_economy.get_total_circulation() / 10_u128.pow(WEBCASH_DECIMALS),
+        circulation: webcash_economy.get_total_circulation(),
+        circulation_formatted: webcash_economy
+            .get_total_circulation()
+            .separate_with_commas(),
         difficulty_target_bits: webcash_economy.get_difficulty_target_bits(),
-        ratio: webcash_economy.get_ratio(),
-        mining_amount: webcash_economy.get_mining_amount(),
-        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
         epoch: webcash_economy.get_epoch(),
+        mining_amount: webcash_economy.get_mining_amount(),
         mining_reports: webcash_economy.get_mining_reports(),
+        mining_subsidy_amount: webcash_economy.get_subsidy_amount(),
+        ratio: webcash_economy.get_ratio(),
     })
 }
 
 #[derive(Deserialize)]
 struct MiningReportRequest {
-    #[serde(rename = "work")]
-    _work: serde_json::Number,
-    preimage: String,
     legalese: LegaleseRequest,
+    preimage: String,
 }
 
 #[derive(Serialize)]
 struct MiningReportResponse {
-    status: String,
+    difficulty_target_bits: u8,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
-    difficulty_target_bits: u8,
+    status: String,
 }
 
 #[derive(Deserialize)]
 struct PreimageRequest {
-    webcash: Vec<SecretWebcash>,
     subsidy: Vec<SecretWebcash>,
-    #[serde(rename = "nonce")]
-    _nonce: u64,
     timestamp: serde_json::Number,
-    difficulty: u32,
-    legalese: LegaleseRequest,
+    webcash: Vec<SecretWebcash>,
 }
 
 const MAX_MINING_OUTPUT_TOKENS: usize = 100;
@@ -253,10 +226,17 @@ fn json_mining_report_response(
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(MiningReportResponse {
-        status: status_message.to_string(),
-        error: error_message.to_string(),
         difficulty_target_bits,
+        error: error_message.to_string(),
+        status: status_message.to_string(),
     })
+}
+
+fn decode_preimage(preimage_request_base64: &str) -> Option<PreimageRequest> {
+    let preimage_request_bytes = base64::decode(preimage_request_base64).ok()?;
+    let preimage_request_string = std::str::from_utf8(&preimage_request_bytes).ok()?;
+    let preimage_request: PreimageRequest = serde_json::from_str(preimage_request_string).ok()?;
+    Some(preimage_request)
 }
 
 #[post("/api/v1/mining_report")]
@@ -276,58 +256,19 @@ async fn mining_report(
         );
     }
 
-    let preimage_bytes = match base64::decode(&mining_report_request.preimage) {
-        Ok(preimage_bytes) => preimage_bytes,
-        Err(_) => {
+    let preimage_request_base64 = &mining_report_request.preimage;
+    let preimage_request = match decode_preimage(preimage_request_base64) {
+        Some(preimage_request) => preimage_request,
+        None => {
             return json_mining_report_response(
                 JSON_STATUS_ERROR,
-                "Could not base64 decode preimage.",
+                "Could not decode preimage request.",
                 difficulty_target_bits,
             );
         }
     };
 
-    let preimage_as_str = match std::str::from_utf8(&preimage_bytes) {
-        Ok(preimage_as_str) => preimage_as_str,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not UTF-8 decode preimage bytes.",
-                difficulty_target_bits,
-            );
-        }
-    };
-
-    let preimage: PreimageRequest = match serde_json::from_str(preimage_as_str) {
-        Ok(preimage) => preimage,
-        Err(_) => {
-            return json_mining_report_response(
-                JSON_STATUS_ERROR,
-                "Could not JSON decode preimage string.",
-                difficulty_target_bits,
-            );
-        }
-    };
-
-    // TODO: Relevant to check? We've already checked the legalese once in this request above.
-    if !preimage.legalese.terms {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Terms of service not accepted in preimage JSON.",
-            difficulty_target_bits,
-        );
-    }
-
-    // TODO: Relevant to check? The target difficulty is not relevant as long as the achieved difficulty is sufficient?
-    if preimage.difficulty != u32::from(difficulty_target_bits) {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Invalid difficulty in preimage JSON.",
-            difficulty_target_bits,
-        );
-    }
-
-    let preimage_timestamp = match preimage.timestamp.as_f64() {
+    let preimage_timestamp = match preimage_request.timestamp.as_f64() {
         Some(preimage_timestamp) => preimage_timestamp,
         None => {
             return json_mining_report_response(
@@ -339,24 +280,8 @@ async fn mining_report(
     };
     #[allow(clippy::cast_possible_truncation)]
     let preimage_timestamp = preimage_timestamp.round() as i64;
-    if !webcash_economy.is_valid_proof_of_work(&mining_report_request.preimage, preimage_timestamp)
-    {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Invalid proof of work.",
-            difficulty_target_bits,
-        );
-    }
 
-    // TODO: Check that subsidy token(s) is a subset of webcash tokens. JSON: {"webcash": ["e95000:secret:<hex>", "e5000:secret:<hex>"], "subsidy": ["e5000:secret:<hex>"], "nonce": 530201, "timestamp": 1651929787.514265, "difficulty": 20, "legalese": {"terms": true}}
-    let webcash_tokens = preimage.webcash;
-    if webcash_tokens.contains_duplicates() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Duplicate webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
+    let webcash_tokens = preimage_request.webcash;
     if MAX_MINING_OUTPUT_TOKENS < webcash_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -365,32 +290,7 @@ async fn mining_report(
         );
     }
 
-    let mining_amount = webcash_tokens.total_value();
-    if mining_amount.is_none() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Missing webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
-    let mining_amount = mining_amount.unwrap();
-    if mining_amount != webcash_economy.get_mining_amount() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Unexpected mining amount.",
-            difficulty_target_bits,
-        );
-    }
-
-    // TODO: Claim and store server operator's tokens.
-    let subsidy_tokens = preimage.subsidy;
-    if subsidy_tokens.contains_duplicates() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Duplicate webcash in mining report.",
-            difficulty_target_bits,
-        );
-    }
+    let subsidy_tokens = preimage_request.subsidy;
     if MAX_MINING_OUTPUT_SUBSIDY_TOKENS < subsidy_tokens.len() {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -399,30 +299,12 @@ async fn mining_report(
         );
     }
 
-    let subsidy_amount = subsidy_tokens.total_value();
-    if subsidy_amount.is_none() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Missing subsidy in mining report.",
-            difficulty_target_bits,
-        );
-    }
-    let subsidy_amount = subsidy_amount.unwrap();
-    if subsidy_amount != webcash_economy.get_subsidy_amount() {
-        return json_mining_report_response(
-            JSON_STATUS_ERROR,
-            "Unexpected subsidy amount.",
-            difficulty_target_bits,
-        );
-    }
-
-    assert_eq!(mining_amount, webcash_economy.get_mining_amount());
-    assert_eq!(subsidy_amount, webcash_economy.get_subsidy_amount());
-    assert!(subsidy_amount <= mining_amount);
-    assert_eq!(preimage.difficulty, u32::from(difficulty_target_bits));
-
-    // TODO: Rename create_tokens as mine_tokens. In mine_tokens: add check for mining amounts, etc. Add all checks above. Remove public access to create_tokens.
-    let mining_successful = webcash_economy.create_tokens(&webcash_tokens);
+    let mining_successful = webcash_economy.mine_tokens(
+        preimage_request_base64,
+        preimage_timestamp,
+        &webcash_tokens,
+        &subsidy_tokens,
+    );
     if !mining_successful {
         return json_mining_report_response(
             JSON_STATUS_ERROR,
@@ -430,21 +312,23 @@ async fn mining_report(
             difficulty_target_bits,
         );
     }
+
     json_mining_report_response(JSON_STATUS_SUCCESS, "", difficulty_target_bits)
 }
 
 #[derive(Serialize)]
 struct HealthCheckSpentResponse {
-    spent: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     amount: Option<Amount>,
+    spent: Option<bool>,
 }
 
 #[derive(Serialize)]
 struct HealthCheckResponse {
-    status: String,
     #[serde(skip_serializing_if = "String::is_empty")]
     error: String,
     results: std::collections::HashMap<String, HealthCheckSpentResponse>,
+    status: String,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -456,9 +340,9 @@ fn json_health_check_response(
 ) -> impl actix_web::Responder {
     assert!(status_message == JSON_STATUS_SUCCESS || status_message == JSON_STATUS_ERROR);
     web::Json(HealthCheckResponse {
-        status: status_message.to_string(),
         error: error_message.to_string(),
         results,
+        status: status_message.to_string(),
     })
 }
 
@@ -469,9 +353,9 @@ const MAX_HEALTH_CHECK_TOKENS: usize = 100;
 #[allow(clippy::unused_async)]
 async fn health_check(
     data: web::Data<WebcashApplicationState>,
-    health_check_request: web::Json<Vec<PublicWebcash>>,
+    tokens: web::Json<Vec<PublicWebcash>>,
 ) -> impl actix_web::Responder {
-    if MAX_HEALTH_CHECK_TOKENS < health_check_request.len() {
+    if MAX_HEALTH_CHECK_TOKENS < tokens.len() {
         return json_health_check_response(
             JSON_STATUS_ERROR,
             "Requested number of public webcash to check exceeds maximum limit.",
@@ -480,20 +364,15 @@ async fn health_check(
     }
     let webcash_economy = &mut data.webcash_economy.lock().unwrap();
     let mut results = std::collections::HashMap::<String, HealthCheckSpentResponse>::default();
-    // TODO: Move this to separate method in WebcashEconomy. Remove public access for get_using_public_token.
-    for public_webcash_token in health_check_request.iter() {
+    for (token_string, output) in webcash_economy.get_outputs(&tokens) {
         let mut spent: Option<bool> = None;
         let mut amount: Option<Amount> = None;
-        if let Some(amount_state) = webcash_economy.get_using_public_token(public_webcash_token) {
-            spent = Some(amount_state.spent);
-            amount = Some(amount_state.amount);
+        if let Some(output) = output {
+            spent = Some(output.spent);
+            amount = Some(output.amount);
         }
-        results.insert(
-            public_webcash_token.to_string(),
-            HealthCheckSpentResponse { spent, amount },
-        );
+        results.insert(token_string, HealthCheckSpentResponse { amount, spent });
     }
-    assert!(results.len() == health_check_request.len());
 
     json_health_check_response(JSON_STATUS_SUCCESS, "", results)
 }
@@ -511,16 +390,21 @@ async fn main() -> std::io::Result<()> {
     }
     pretty_env_logger::init_timed();
 
-    info!("Starting server instance at http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
-
+    let mining_url = format!("http://{SERVER_BIND_ADDRESS}:{SERVER_BIND_PORT}/");
+    info!("Starting server instance at {mining_url}");
+    info!("");
+    info!("Start mining using:");
+    info!("    webminer -server=\"{mining_url}\"");
+    info!("");
     let persist_to_disk = true;
     let webcash_economy = WebcashEconomy::new(persist_to_disk);
     info!(
-        "The economy contains {} unspent webcash (in {} tokens) at startup.",
-        webcash_economy.get_total_unspent().separate_with_commas(),
+        "The economy created {} contained ₩{} (in {} tokens) at startup.",
+        &webcash_economy.get_genesis_date().to_string()[..10],
+        webcash_economy.get_total_unspent().separate_with_spaces(),
         webcash_economy
             .get_number_of_unspent_tokens()
-            .separate_with_commas()
+            .separate_with_spaces()
     );
     info!("Set the environment variable RUST_LOG=debug to print debug information.");
     info!("Quit the server with CONTROL-C.");
