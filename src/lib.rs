@@ -67,6 +67,7 @@ impl std::ops::Add for Amount {
     }
 }
 
+// TODO: How to handle the case where sum > u64 max?
 impl std::iter::Sum for Amount {
     fn sum<I>(iter: I) -> Self
     where
@@ -538,6 +539,7 @@ impl WebcashEconomy {
     #[must_use]
     pub fn get_total_unspent(&self) -> Amount {
         let now = std::time::Instant::now();
+        // TODO: How to handle the case where sum > u64 max?
         let total_unspent = self
             .hash_to_output
             .values()
@@ -554,6 +556,7 @@ impl WebcashEconomy {
     #[must_use]
     fn get_total_mined(&self) -> Amount {
         let now = std::time::Instant::now();
+        // TODO: How to handle the case where sum > u64 max?
         let total_mined = self
             .mining_reports
             .iter()
