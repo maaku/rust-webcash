@@ -368,8 +368,8 @@ async fn health_check(
         let mut spent: Option<bool> = None;
         let mut amount: Option<Amount> = None;
         if let Some(output) = output {
-            spent = Some(output.spent);
-            amount = Some(output.amount);
+            spent = Some(output.is_spent());
+            amount = Some(output.get_amount());
         }
         results.insert(token_string, HealthCheckSpentResponse { amount, spent });
     }

@@ -421,8 +421,20 @@ impl SumAmounts for [PublicWebcash] {
 
 #[derive(Deserialize, Serialize)]
 pub struct Output {
-    pub amount: Amount,
-    pub spent: bool,
+    amount: Amount,
+    spent: bool,
+}
+
+impl Output {
+    #[must_use]
+    pub fn is_spent(&self) -> bool {
+        self.spent
+    }
+
+    #[must_use]
+    pub fn get_amount(&self) -> Amount {
+        self.amount
+    }
 }
 
 // https://github.com/serde-rs/serde/issues/368
